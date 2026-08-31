@@ -16,6 +16,24 @@ type CartItem = Product & {
   note?: string;
 };
 
+type TicketTotals = {
+  subtotal: number;
+  discountAmount: number;
+  tax: number;
+  tipAmount: number;
+  total: number;
+};
+
+type Ticket = {
+  folio: string;
+  table: string;
+  cashier: string;
+  payment: string;
+  createdAt: string;
+  items: CartItem[];
+  totals: TicketTotals;
+};
+
 const products: Product[] = [
   { id: 1, name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
   { id: 2, name: "Latte", category: "Cafe", price: 58, station: "Barra", tag: "Popular" },
@@ -47,6 +65,8 @@ export default function Home() {
   const [discount, setDiscount] = useState(0);
   const [tip, setTip] = useState(10);
   const [payment, setPayment] = useState(paymentMethods[1]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
   const visibleProducts = products.filter(
     (product) => activeCategory === "Todo" || product.category === activeCategory,
@@ -91,8 +111,38 @@ export default function Home() {
     setTip(10);
   };
 
+  const createTicket = () => {
+    if (cart.length === 0) {
+      return;
+    }
+
+    const ticket: Ticket = {
+      folio: `T-${String(1029 + tickets.length).padStart(4, "0")}`,
+      table: activeTable,
+      cashier: "Ana Lopez",
+      payment,
+      createdAt: new Date().toLocaleString("es-MX", {
+        dateStyle: "short",
+        timeStyle: "short",
+      }),
+      items: cart.map((item) => ({ ...item })),
+      totals: { ...totals },
+    };
+
+    setTickets((currentTickets) => [ticket, ...currentTickets]);
+    setSelectedTicket(ticket);
+    clearSale();
+  };
+
+  const printTicket = () => {
+    if (selectedTicket) {
+      window.print();
+    }
+  };
+
   const readyOrders = cart.filter((item) => item.station === "Barra").length;
   const kitchenOrders = cart.filter((item) => item.station === "Cocina").length;
+  const ticketSales = tickets.reduce((sum, ticket) => sum + ticket.totals.total, 0);
 
   return (
     <main className="min-h-screen bg-[#f6f4ef] text-stone-950">
@@ -103,7 +153,7 @@ export default function Home() {
             <h1 className="mt-1 text-2xl font-semibold">Mesa Clara POS</h1>
           </div>
           <nav className="space-y-2">
-            {["Venta", "Mesas", "Barra", "Inventario", "Reportes"].map((item, index) => (
+            {["Venta", "Tickets", "Mesas", "Barra", "Inventario", "Reportes"].map((item, index) => (
               <button
                 className={`w-full rounded-md px-3 py-2 text-left text-sm ${
                   index === 0 ? "bg-white text-stone-950" : "text-stone-200 hover:bg-white/10"
@@ -146,7 +196,7 @@ export default function Home() {
           </header>
 
           <div className="mb-5 grid grid-cols-4 gap-3 max-md:grid-cols-2">
-            <Metric label="Ventas hoy" value="$8,420" detail="38 tickets" />
+            <Metric label="Ventas hoy" value={formatCurrency(8420 + ticketSales)} detail={`${38 + tickets.length} tickets`} />
             <Metric label="Orden activa" value={activeTable} detail={`${cart.length} partidas`} />
             <Metric label="Barra" value={`${readyOrders}`} detail="bebidas pendientes" />
             <Metric label="Cocina" value={`${kitchenOrders}`} detail="alimentos pendientes" />
@@ -268,13 +318,98 @@ export default function Home() {
             ))}
           </div>
 
-          <button className="mt-4 w-full rounded-md bg-[#b7412e] px-4 py-4 text-base font-semibold text-white shadow-sm hover:bg-[#9f3525]">
-            Cobrar {formatCurrency(totals.total)}
+          <button
+            className="mt-4 w-full rounded-md bg-[#b7412e] px-4 py-4 text-base font-semibold text-white shadow-sm hover:bg-[#9f3525] disabled:cursor-not-allowed disabled:bg-stone-300"
+            disabled={cart.length === 0}
+            onClick={createTicket}
+          >
+            Cobrar y crear ticket {formatCurrency(totals.total)}
           </button>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button className="rounded-md border border-stone-300 px-3 py-3 text-sm font-medium">Enviar cocina</button>
-            <button className="rounded-md border border-stone-300 px-3 py-3 text-sm font-medium">Imprimir ticket</button>
+            <button
+              className="rounded-md border border-stone-300 px-3 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:text-stone-400"
+              disabled={!selectedTicket}
+              onClick={printTicket}
+            >
+              Imprimir ticket
+            </button>
           </div>
+
+          <section className="mt-5 border-t border-stone-200 pt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="font-semibold">Tickets recientes</h4>
+              <span className="text-sm text-stone-500">{tickets.length} creados</span>
+            </div>
+            <div className="space-y-2">
+              {tickets.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500">
+                  Al cobrar una cuenta se generara el primer ticket.
+                </div>
+              ) : (
+                tickets.map((ticket) => (
+                  <button
+                    className={`w-full rounded-lg border p-3 text-left ${
+                      selectedTicket?.folio === ticket.folio
+                        ? "border-emerald-900 bg-emerald-50"
+                        : "border-stone-200 bg-white"
+                    }`}
+                    key={ticket.folio}
+                    onClick={() => setSelectedTicket(ticket)}
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="font-semibold">{ticket.folio}</span>
+                      <span className="font-semibold">{formatCurrency(ticket.totals.total)}</span>
+                    </span>
+                    <span className="mt-1 block text-sm text-stone-500">
+                      {ticket.table} · {ticket.payment} · {ticket.createdAt}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
+          {selectedTicket ? (
+            <section className="ticket-print mt-5 rounded-lg border border-stone-300 bg-[#fffdf7] p-4 font-mono text-sm">
+              <div className="text-center">
+                <p className="text-base font-bold">MESA CLARA POS</p>
+                <p>Restaurante / Cafeteria</p>
+                <p>RFC: XAXX010101000</p>
+              </div>
+              <div className="my-3 border-y border-dashed border-stone-400 py-2">
+                <Row label="Ticket" value={selectedTicket.folio} />
+                <Row label="Mesa" value={selectedTicket.table} />
+                <Row label="Cajero" value={selectedTicket.cashier} />
+                <Row label="Fecha" value={selectedTicket.createdAt} />
+              </div>
+              <div className="space-y-2">
+                {selectedTicket.items.map((item) => (
+                  <div key={`${selectedTicket.folio}-${item.id}`}>
+                    <div className="flex justify-between gap-3">
+                      <span>
+                        {item.qty} x {item.name}
+                      </span>
+                      <span>{formatCurrency(item.price * item.qty)}</span>
+                    </div>
+                    {item.note ? <p className="text-xs text-stone-500">Nota: {item.note}</p> : null}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 border-t border-dashed border-stone-400 pt-2">
+                <Row label="Subtotal" value={formatCurrency(selectedTicket.totals.subtotal)} />
+                <Row label="Descuento" value={`-${formatCurrency(selectedTicket.totals.discountAmount)}`} />
+                <Row label="IVA" value={formatCurrency(selectedTicket.totals.tax)} />
+                <Row label="Propina" value={formatCurrency(selectedTicket.totals.tipAmount)} />
+                <div className="mt-2 flex justify-between text-base font-bold">
+                  <span>Total</span>
+                  <span>{formatCurrency(selectedTicket.totals.total)}</span>
+                </div>
+                <Row label="Pago" value={selectedTicket.payment} />
+              </div>
+              <p className="mt-4 text-center text-xs">Gracias por su compra</p>
+            </section>
+          ) : null}
         </aside>
       </div>
     </main>
