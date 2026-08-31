@@ -18,11 +18,13 @@ CREATE TABLE IF NOT EXISTS tickets (
   cashier TEXT NOT NULL,
   payment TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  shift_id INTEGER,
   subtotal INTEGER NOT NULL,
   discount_amount INTEGER NOT NULL,
   tax INTEGER NOT NULL,
   tip_amount INTEGER NOT NULL,
-  total INTEGER NOT NULL
+  total INTEGER NOT NULL,
+  FOREIGN KEY (shift_id) REFERENCES cash_shifts(id)
 )`;
 
 export const createTicketItemsTable = `
@@ -45,6 +47,44 @@ ON tickets(created_at)`;
 export const createTicketItemsTicketIndex = `
 CREATE INDEX IF NOT EXISTS idx_ticket_items_ticket_id
 ON ticket_items(ticket_id)`;
+
+export const createCashShiftsTable = `
+CREATE TABLE IF NOT EXISTS cash_shifts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  closed_at TEXT,
+  cashier TEXT NOT NULL,
+  opening_cash INTEGER NOT NULL,
+  closing_cash INTEGER,
+  expected_cash INTEGER,
+  notes TEXT,
+  status TEXT NOT NULL CHECK (status IN ('open', 'closed')) DEFAULT 'open'
+)`;
+
+export const createCashMovementsTable = `
+CREATE TABLE IF NOT EXISTS cash_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shift_id INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('in', 'out')),
+  reason TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  cashier TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (shift_id) REFERENCES cash_shifts(id) ON DELETE CASCADE
+)`;
+
+export const createOpenCashShiftIndex = `
+CREATE INDEX IF NOT EXISTS idx_cash_shifts_open_status
+ON cash_shifts(status)
+WHERE status = 'open'`;
+
+export const createCashMovementsShiftIndex = `
+CREATE INDEX IF NOT EXISTS idx_cash_movements_shift_id
+ON cash_movements(shift_id)`;
+
+export const createTicketsShiftIndex = `
+CREATE INDEX IF NOT EXISTS idx_tickets_shift_id
+ON tickets(shift_id)`;
 
 export const initialProducts = [
   { name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },

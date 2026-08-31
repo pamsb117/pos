@@ -35,6 +35,47 @@ type ProductDraft = {
   station: "Barra" | "Cocina";
   tag: string;
 };
+type CashMovement = {
+  id: number;
+  shiftId: number;
+  type: "in" | "out";
+  reason: string;
+  amount: number;
+  cashier: string;
+  createdAt: string;
+};
+type CashRegister = {
+  openShift: {
+    id: number;
+    openedAt: string;
+    closedAt: string | null;
+    cashier: string;
+    openingCash: number;
+    closingCash: number | null;
+    expectedCash: number | null;
+    notes: string | null;
+    status: "open" | "closed";
+  } | null;
+  movements: CashMovement[];
+  summary: {
+    cashSales: number;
+    cardSales: number;
+    transferSales: number;
+    cashIn: number;
+    cashOut: number;
+    expectedCash: number;
+    ticketCount: number;
+    totalSales: number;
+  };
+};
+type CashDraft = {
+  openingCash: string;
+  movementType: "in" | "out";
+  movementReason: string;
+  movementAmount: string;
+  closingCash: string;
+  notes: string;
+};
 
 const defaultProducts: Product[] = [
   { id: 1, name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
@@ -53,8 +94,9 @@ const defaultProducts: Product[] = [
 
 const tables = ["Mostrador", "Mesa 1", "Mesa 2", "Mesa 3", "Terraza"];
 const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia"];
-const navItems = ["Venta", "Productos", "Tickets", "Mesas", "Barra", "Reportes"];
+const navItems = ["Venta", "Caja", "Productos", "Tickets", "Mesas", "Barra", "Reportes"];
 const emptyProductDraft: ProductDraft = { name: "", category: "Cafe", price: "", station: "Barra", tag: "" };
+const emptyCashDraft: CashDraft = { openingCash: "500", movementType: "out", movementReason: "", movementAmount: "", closingCash: "", notes: "" };
 const money = (value: number) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
 
 export default function Home() {
@@ -73,8 +115,11 @@ export default function Home() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [productDraft, setProductDraft] = useState<ProductDraft>(emptyProductDraft);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
+  const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCashDraft);
   const [isSavingTicket, setIsSavingTicket] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSavingCash, setIsSavingCash] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Base de datos lista");
 
   const loadProducts = async () => {
@@ -92,8 +137,16 @@ export default function Home() {
     setSelectedTicket(payload.tickets[0] ?? null);
   };
 
+  const loadCashRegister = async () => {
+    const response = await fetch("/api/cash");
+    if (!response.ok) throw new Error("No se pudo cargar la caja.");
+    const payload = (await response.json()) as { register: CashRegister };
+    setCashRegister(payload.register);
+    setCashDraft((draft) => ({ ...draft, closingCash: payload.register.summary.expectedCash ? String(payload.register.summary.expectedCash) : draft.closingCash }));
+  };
+
   useEffect(() => {
-    Promise.all([loadProducts(), loadTickets()])
+    Promise.all([loadProducts(), loadTickets(), loadCashRegister()])
       .then(() => setStatusMessage("Datos sincronizados"))
       .catch(() => setStatusMessage("Trabajando con datos locales"));
   }, []);
@@ -156,6 +209,7 @@ export default function Home() {
       const payload = (await response.json()) as { ticket: Ticket };
       setTickets((currentTickets) => [payload.ticket, ...currentTickets]);
       setSelectedTicket(payload.ticket);
+      await loadCashRegister();
       clearSale();
       setStatusMessage(`${payload.ticket.folio} guardado`);
     } catch {
@@ -232,11 +286,50 @@ export default function Home() {
     }
   };
 
+  const submitCashAction = async (action: "open" | "movement" | "close") => {
+    setIsSavingCash(true);
+    setStatusMessage(action === "open" ? "Abriendo caja..." : action === "close" ? "Cerrando caja..." : "Registrando movimiento...");
+
+    const payload =
+      action === "open"
+        ? { action, cashier: "Ana Lopez", openingCash: Number(cashDraft.openingCash) }
+        : action === "movement"
+          ? {
+              action,
+              amount: Number(cashDraft.movementAmount),
+              cashier: "Ana Lopez",
+              reason: cashDraft.movementReason,
+              type: cashDraft.movementType,
+            }
+          : { action, closingCash: Number(cashDraft.closingCash), notes: cashDraft.notes };
+
+    try {
+      const response = await fetch("/api/cash", {
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("No se pudo actualizar la caja.");
+      const result = (await response.json()) as { register: CashRegister };
+      setCashRegister(result.register);
+      setCashDraft({
+        ...emptyCashDraft,
+        closingCash: result.register.summary.expectedCash ? String(result.register.summary.expectedCash) : "",
+        openingCash: cashDraft.openingCash,
+      });
+      setStatusMessage(action === "open" ? "Caja abierta" : action === "close" ? "Corte cerrado" : "Movimiento registrado");
+    } catch {
+      setStatusMessage("No se pudo actualizar la caja");
+    } finally {
+      setIsSavingCash(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#eef1ee] text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-[1720px] grid-cols-[248px_minmax(0,1fr)_420px] max-xl:grid-cols-[210px_minmax(0,1fr)] max-lg:block">
         <aside className="hidden border-r border-slate-200 bg-[#111b1a] px-4 py-5 text-white lg:block">
-          <BrandBlock ticketCount={tickets.length} total={8420 + ticketSales} activeView={activeView} onNavigate={setActiveView} />
+          <BrandBlock ticketCount={tickets.length} total={cashRegister?.summary.expectedCash ?? 0} activeView={activeView} onNavigate={setActiveView} />
         </aside>
 
         <section className="flex min-h-screen flex-col px-6 py-5 max-lg:min-h-0 max-sm:px-4">
@@ -262,10 +355,10 @@ export default function Home() {
           </header>
 
           <div className="mb-5 grid grid-cols-4 gap-3 max-md:grid-cols-2">
-            <Metric label="Ventas hoy" value={money(8420 + ticketSales)} detail={`${38 + tickets.length} tickets`} />
+            <Metric label="Ventas hoy" value={money(ticketSales)} detail={`${tickets.length} tickets`} />
             <Metric label="Cuenta activa" value={activeTable} detail={`${cartUnits} articulos`} />
-            <Metric label="Barra" value={`${cart.filter((item) => item.station === "Barra").length}`} detail="bebidas en cuenta" />
-            <Metric label="Cocina" value={`${cart.filter((item) => item.station === "Cocina").length}`} detail="alimentos en cuenta" />
+            <Metric label="Caja esperada" value={money(cashRegister?.summary.expectedCash ?? 0)} detail={cashRegister?.openShift ? "turno abierto" : "sin turno abierto"} />
+            <Metric label="Cocina / Barra" value={`${cart.filter((item) => item.station === "Cocina").length}/${cart.filter((item) => item.station === "Barra").length}`} detail="items en cuenta" />
           </div>
 
           {activeView === "Productos" ? (
@@ -282,6 +375,14 @@ export default function Home() {
               onEdit={startEditProduct}
               onSave={saveProduct}
               products={products}
+            />
+          ) : activeView === "Caja" ? (
+            <CashRegisterPanel
+              draft={cashDraft}
+              isSaving={isSavingCash}
+              onChange={setCashDraft}
+              onSubmit={submitCashAction}
+              register={cashRegister}
             />
           ) : (
             <SaleCatalog activeCategory={activeCategory} categories={categories} onAdd={addProduct} onCategory={setActiveCategory} products={visibleProducts} />
@@ -343,11 +444,12 @@ function BrandBlock({
           >
             <span>{item}</span>
             {item === "Tickets" ? <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-slate-300">{ticketCount}</span> : null}
+            {item === "Caja" ? <span className="rounded bg-emerald-400/15 px-2 py-0.5 text-xs text-emerald-100">Turno</span> : null}
           </button>
         ))}
       </nav>
       <div className="mt-8 rounded-lg border border-white/10 bg-white/5 p-4">
-        <p className="text-xs font-medium uppercase text-emerald-200">Corte abierto</p>
+        <p className="text-xs font-medium uppercase text-emerald-200">Efectivo esperado</p>
         <p className="mt-3 text-2xl font-semibold">{money(total)}</p>
         <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-300">
           <div>
@@ -507,6 +609,177 @@ function ProductAdmin({
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function CashRegisterPanel({
+  draft,
+  isSaving,
+  onChange,
+  onSubmit,
+  register,
+}: {
+  draft: CashDraft;
+  isSaving: boolean;
+  onChange: (draft: CashDraft) => void;
+  onSubmit: (action: "open" | "movement" | "close") => void;
+  register: CashRegister | null;
+}) {
+  const shift = register?.openShift ?? null;
+  const summary = register?.summary ?? {
+    cashIn: 0,
+    cashOut: 0,
+    cashSales: 0,
+    cardSales: 0,
+    expectedCash: 0,
+    ticketCount: 0,
+    totalSales: 0,
+    transferSales: 0,
+  };
+  const closingCash = Number(draft.closingCash || 0);
+  const difference = shift ? closingCash - summary.expectedCash : 0;
+
+  if (!shift) {
+    return (
+      <section className="grid flex-1 grid-cols-[minmax(0,1fr)_360px] gap-4 max-xl:grid-cols-1">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Caja principal</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight">Abrir turno de caja</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Abre un turno antes de cobrar para que los tickets en efectivo, entradas y salidas queden ligados al corte del dia.
+          </p>
+          <div className="mt-7 max-w-sm">
+            <TextField
+              label="Fondo inicial"
+              onChange={(value) => onChange({ ...draft, openingCash: value })}
+              placeholder="500"
+              type="number"
+              value={draft.openingCash}
+            />
+            <button
+              className="mt-4 w-full rounded-lg bg-[#17443d] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={isSaving || Number(draft.openingCash) < 0}
+              onClick={() => onSubmit("open")}
+            >
+              {isSaving ? "Abriendo..." : "Abrir caja"}
+            </button>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-[#111b1a] p-5 text-white shadow-sm">
+          <p className="text-xs font-semibold uppercase text-emerald-200">Listo para operar</p>
+          <p className="mt-4 text-4xl font-semibold">{money(0)}</p>
+          <p className="mt-2 text-sm text-slate-300">Sin caja abierta no se calcula corte.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] gap-4 max-xl:grid-cols-1">
+      <section className="min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Turno abierto</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Caja Principal</h2>
+          <p className="mt-1 text-sm text-slate-500">Abierta por {shift.cashier} · {shift.openedAt}</p>
+        </div>
+        <div className="grid grid-cols-4 gap-3 p-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
+          <Metric label="Efectivo esperado" value={money(summary.expectedCash)} detail="fondo + efectivo + movimientos" />
+          <Metric label="Ventas del turno" value={money(summary.totalSales)} detail={`${summary.ticketCount} tickets cobrados`} />
+          <Metric label="Entradas" value={money(summary.cashIn)} detail="efectivo agregado" />
+          <Metric label="Salidas" value={money(summary.cashOut)} detail="retiros y gastos" />
+        </div>
+        <div className="grid grid-cols-3 gap-3 px-5 pb-5 max-md:grid-cols-1">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-500">Efectivo</p>
+            <p className="mt-2 text-2xl font-semibold">{money(summary.cashSales)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-500">Tarjeta</p>
+            <p className="mt-2 text-2xl font-semibold">{money(summary.cardSales)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-500">Transferencia</p>
+            <p className="mt-2 text-2xl font-semibold">{money(summary.transferSales)}</p>
+          </div>
+        </div>
+        <div className="border-t border-slate-200 px-5 py-4">
+          <h3 className="font-semibold">Movimientos de efectivo</h3>
+        </div>
+        <div className="max-h-[260px] overflow-y-auto">
+          {(register?.movements ?? []).length === 0 ? (
+            <div className="m-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">Sin entradas o salidas registradas.</div>
+          ) : (
+            register?.movements.map((movement) => (
+              <div className="grid grid-cols-[90px_minmax(0,1fr)_120px] items-center gap-3 border-t border-slate-100 px-5 py-4" key={movement.id}>
+                <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${movement.type === "in" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                  {movement.type === "in" ? "Entrada" : "Salida"}
+                </span>
+                <div>
+                  <p className="font-semibold">{movement.reason}</p>
+                  <p className="mt-1 text-sm text-slate-500">{movement.cashier} · {movement.createdAt}</p>
+                </div>
+                <p className="text-right text-lg font-semibold">{movement.type === "out" ? "-" : "+"}{money(movement.amount)}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Movimiento</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {(["in", "out"] as const).map((type) => (
+              <button
+                className={`h-10 rounded-lg border text-sm font-semibold ${draft.movementType === type ? "border-[#17443d] bg-[#17443d] text-white" : "border-slate-300 bg-white text-slate-600"}`}
+                key={type}
+                onClick={() => onChange({ ...draft, movementType: type })}
+              >
+                {type === "in" ? "Entrada" : "Salida"}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 space-y-4">
+            <TextField label="Motivo" onChange={(value) => onChange({ ...draft, movementReason: value })} placeholder="Ej. Compra insumos" value={draft.movementReason} />
+            <TextField label="Importe" onChange={(value) => onChange({ ...draft, movementAmount: value })} placeholder="0" type="number" value={draft.movementAmount} />
+          </div>
+          <button
+            className="mt-4 w-full rounded-lg bg-[#17443d] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={isSaving || Number(draft.movementAmount) <= 0}
+            onClick={() => onSubmit("movement")}
+          >
+            {isSaving ? "Guardando..." : "Registrar movimiento"}
+          </button>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Corte</p>
+          <div className="mt-4 space-y-3 text-sm">
+            <Row label="Fondo inicial" value={money(shift.openingCash)} />
+            <Row label="Efectivo ventas" value={money(summary.cashSales)} />
+            <Row label="Entradas" value={money(summary.cashIn)} />
+            <Row label="Salidas" value={`-${money(summary.cashOut)}`} />
+            <div className="border-t border-slate-200 pt-3">
+              <Row label="Esperado" value={money(summary.expectedCash)} />
+            </div>
+          </div>
+          <div className="mt-4 space-y-4">
+            <TextField label="Efectivo contado" onChange={(value) => onChange({ ...draft, closingCash: value })} placeholder="0" type="number" value={draft.closingCash} />
+            <TextField label="Notas" onChange={(value) => onChange({ ...draft, notes: value })} placeholder="Observaciones del cierre" value={draft.notes} />
+          </div>
+          <div className={`mt-4 rounded-lg p-3 text-sm font-semibold ${difference === 0 ? "bg-slate-100 text-slate-600" : difference > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            Diferencia: {money(difference)}
+          </div>
+          <button
+            className="mt-4 w-full rounded-lg bg-[#c64d36] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={isSaving || draft.closingCash === ""}
+            onClick={() => onSubmit("close")}
+          >
+            {isSaving ? "Cerrando..." : "Cerrar corte"}
+          </button>
+        </section>
+      </aside>
     </div>
   );
 }
