@@ -76,6 +76,13 @@ type CashDraft = {
   closingCash: string;
   notes: string;
 };
+type SentCommand = {
+  id: string;
+  table: string;
+  station: "Barra" | "Cocina";
+  createdAt: string;
+  items: CartItem[];
+};
 
 const defaultProducts: Product[] = [
   { id: 1, name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
@@ -93,8 +100,14 @@ const defaultProducts: Product[] = [
 ];
 
 const tables = ["Mostrador", "Mesa 1", "Mesa 2", "Mesa 3", "Terraza"];
+const seededCarts: Record<string, CartItem[]> = {
+  Mostrador: [
+    { ...defaultProducts[1], qty: 1 },
+    { ...defaultProducts[7], qty: 1, note: "Sin crema" },
+  ],
+};
 const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia"];
-const navItems = ["Venta", "Caja", "Productos", "Tickets", "Mesas", "Barra", "Reportes"];
+const navItems = ["Venta", "Caja", "Mesas", "Barra", "Cocina", "Productos", "Tickets", "Reportes"];
 const emptyProductDraft: ProductDraft = { name: "", category: "Cafe", price: "", station: "Barra", tag: "" };
 const emptyCashDraft: CashDraft = { openingCash: "500", movementType: "out", movementReason: "", movementAmount: "", closingCash: "", notes: "" };
 const money = (value: number) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
@@ -104,10 +117,7 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [activeCategory, setActiveCategory] = useState("Todo");
   const [activeTable, setActiveTable] = useState(tables[0]);
-  const [cart, setCart] = useState<CartItem[]>([
-    { ...defaultProducts[1], qty: 1 },
-    { ...defaultProducts[7], qty: 1, note: "Sin crema" },
-  ]);
+  const [cartsByTable, setCartsByTable] = useState<Record<string, CartItem[]>>(seededCarts);
   const [discount, setDiscount] = useState(0);
   const [tip, setTip] = useState(10);
   const [payment, setPayment] = useState(paymentMethods[1]);
@@ -117,6 +127,7 @@ export default function Home() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCashDraft);
+  const [sentCommands, setSentCommands] = useState<SentCommand[]>([]);
   const [isSavingTicket, setIsSavingTicket] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isSavingCash, setIsSavingCash] = useState(false);
@@ -153,8 +164,13 @@ export default function Home() {
 
   const categories = ["Todo", ...Array.from(new Set(products.map((product) => product.category)))];
   const visibleProducts = products.filter((product) => activeCategory === "Todo" || product.category === activeCategory);
+  const cart = cartsByTable[activeTable] ?? [];
   const cartUnits = cart.reduce((sum, item) => sum + item.qty, 0);
   const ticketSales = tickets.reduce((sum, ticket) => sum + ticket.totals.total, 0);
+  const tableTotals = tables.reduce<Record<string, number>>((acc, table) => {
+    acc[table] = (cartsByTable[table] ?? []).reduce((sum, item) => sum + item.price * item.qty, 0);
+    return acc;
+  }, {});
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -166,21 +182,28 @@ export default function Home() {
   }, [cart, discount, tip]);
 
   const addProduct = (product: Product) => {
-    setCart((items) => {
+    setCartsByTable((current) => {
+      const items = current[activeTable] ?? [];
       const match = items.find((item) => item.id === product.id);
-      if (match) return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
-      return [...items, { ...product, qty: 1 }];
+      const nextItems = match
+        ? items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item))
+        : [...items, { ...product, qty: 1 }];
+      return { ...current, [activeTable]: nextItems };
     });
   };
 
   const changeQty = (id: number, delta: number) => {
-    setCart((items) =>
-      items.map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)).filter((item) => item.qty > 0),
-    );
+    setCartsByTable((current) => {
+      const items = current[activeTable] ?? [];
+      const nextItems = items
+        .map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
+        .filter((item) => item.qty > 0);
+      return { ...current, [activeTable]: nextItems };
+    });
   };
 
   const clearSale = () => {
-    setCart([]);
+    setCartsByTable((current) => ({ ...current, [activeTable]: [] }));
     setDiscount(0);
     setTip(10);
   };
@@ -274,7 +297,9 @@ export default function Home() {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("No se pudo desactivar el producto.");
-      setCart((items) => items.filter((item) => item.id !== product.id));
+      setCartsByTable((current) =>
+        Object.fromEntries(Object.entries(current).map(([table, items]) => [table, items.filter((item) => item.id !== product.id)])),
+      );
       await loadProducts();
       if (editingProductId === product.id) {
         setProductDraft(emptyProductDraft);
@@ -284,6 +309,29 @@ export default function Home() {
     } catch {
       setStatusMessage("No se pudo desactivar el producto");
     }
+  };
+
+  const openTable = (table: string) => {
+    setActiveTable(table);
+    setActiveView("Venta");
+  };
+
+  const sendCommand = (station?: "Barra" | "Cocina") => {
+    if (cart.length === 0) return;
+    const stations = station ? [station] : (["Barra", "Cocina"] as const);
+    const nextCommands = stations
+      .map((targetStation) => ({
+        id: `${activeTable}-${targetStation}-${Date.now()}`,
+        table: activeTable,
+        station: targetStation,
+        createdAt: new Date().toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
+        items: cart.filter((item) => item.station === targetStation),
+      }))
+      .filter((command) => command.items.length > 0);
+
+    if (nextCommands.length === 0) return;
+    setSentCommands((current) => [...nextCommands, ...current].slice(0, 12));
+    setStatusMessage(`Comanda enviada: ${nextCommands.map((command) => command.station).join(" / ")}`);
   };
 
   const submitCashAction = async (action: "open" | "movement" | "close") => {
@@ -384,6 +432,19 @@ export default function Home() {
               onSubmit={submitCashAction}
               register={cashRegister}
             />
+          ) : activeView === "Mesas" ? (
+            <TablesPanel
+              activeTable={activeTable}
+              commands={sentCommands}
+              onOpenTable={openTable}
+              tableTotals={tableTotals}
+              tables={tables}
+              cartsByTable={cartsByTable}
+            />
+          ) : activeView === "Barra" ? (
+            <StationPanel commands={sentCommands} station="Barra" />
+          ) : activeView === "Cocina" ? (
+            <StationPanel commands={sentCommands} station="Cocina" />
           ) : (
             <SaleCatalog activeCategory={activeCategory} categories={categories} onAdd={addProduct} onCategory={setActiveCategory} products={visibleProducts} />
           )}
@@ -400,6 +461,7 @@ export default function Home() {
           onDiscount={setDiscount}
           onPayment={setPayment}
           onPrint={() => selectedTicket && window.print()}
+          onSendCommand={sendCommand}
           onSelectTicket={setSelectedTicket}
           onTip={setTip}
           payment={payment}
@@ -784,6 +846,143 @@ function CashRegisterPanel({
   );
 }
 
+function TablesPanel({
+  activeTable,
+  cartsByTable,
+  commands,
+  onOpenTable,
+  tableTotals,
+  tables,
+}: {
+  activeTable: string;
+  cartsByTable: Record<string, CartItem[]>;
+  commands: SentCommand[];
+  onOpenTable: (table: string) => void;
+  tableTotals: Record<string, number>;
+  tables: string[];
+}) {
+  const occupiedTables = tables.filter((table) => (cartsByTable[table] ?? []).length > 0);
+  const openTotal = occupiedTables.reduce((sum, table) => sum + tableTotals[table], 0);
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] gap-4 max-xl:grid-cols-1">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Salon</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Mesas y cuentas abiertas</h2>
+          <p className="mt-1 text-sm text-slate-500">{occupiedTables.length} mesas ocupadas · {money(openTotal)} pendiente por cobrar</p>
+        </div>
+        <div className="grid grid-cols-3 gap-3 p-5 max-2xl:grid-cols-2 max-md:grid-cols-1">
+          {tables.map((table) => {
+            const items = cartsByTable[table] ?? [];
+            const isOpen = items.length > 0;
+            const units = items.reduce((sum, item) => sum + item.qty, 0);
+            return (
+              <button
+                className={`min-h-[180px] rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${
+                  activeTable === table ? "border-[#17443d] bg-[#edf7f4]" : isOpen ? "border-[#d1533b]/40 bg-white" : "border-slate-200 bg-slate-50"
+                }`}
+                key={table}
+                onClick={() => onOpenTable(table)}
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span>
+                    <span className="block text-xl font-semibold">{table}</span>
+                    <span className="mt-1 block text-sm text-slate-500">{isOpen ? `${units} articulos en cuenta` : "Libre para abrir cuenta"}</span>
+                  </span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isOpen ? "bg-[#f7ece8] text-[#a33e2b]" : "bg-emerald-50 text-emerald-700"}`}>
+                    {isOpen ? "Ocupada" : "Libre"}
+                  </span>
+                </span>
+                <span className="mt-8 block text-3xl font-semibold tracking-tight">{money(tableTotals[table] ?? 0)}</span>
+                <span className="mt-4 block text-sm font-semibold text-[#17443d]">Abrir venta</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-[#111b1a] p-5 text-white shadow-sm">
+          <p className="text-xs font-semibold uppercase text-emerald-200">Resumen salon</p>
+          <p className="mt-4 text-4xl font-semibold">{money(openTotal)}</p>
+          <p className="mt-2 text-sm text-slate-300">Total pendiente de cuentas abiertas.</p>
+          <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg bg-white/7 p-3">
+              <p className="text-slate-300">Ocupadas</p>
+              <p className="mt-1 text-2xl font-semibold">{occupiedTables.length}</p>
+            </div>
+            <div className="rounded-lg bg-white/7 p-3">
+              <p className="text-slate-300">Libres</p>
+              <p className="mt-1 text-2xl font-semibold">{tables.length - occupiedTables.length}</p>
+            </div>
+          </div>
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="font-semibold">Ultimas comandas</h3>
+          <div className="mt-4 space-y-3">
+            {commands.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Todavia no se han enviado comandas.</p>
+            ) : (
+              commands.slice(0, 4).map((command) => (
+                <div className="rounded-lg border border-slate-200 p-3" key={command.id}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold">{command.table}</p>
+                    <StationBadge station={command.station} />
+                  </div>
+                  <p className="mt-1 text-sm text-slate-500">{command.items.reduce((sum, item) => sum + item.qty, 0)} articulos · {command.createdAt}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function StationPanel({ commands, station }: { commands: SentCommand[]; station: "Barra" | "Cocina" }) {
+  const stationCommands = commands.filter((command) => command.station === station);
+
+  return (
+    <section className="min-h-0 flex-1 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-5 py-4">
+        <p className="text-xs font-semibold uppercase text-[#b64833]">Comandas</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{station}</h2>
+        <p className="mt-1 text-sm text-slate-500">{stationCommands.length} comandas recientes para preparar</p>
+      </div>
+      <div className="grid grid-cols-3 gap-3 p-5 max-2xl:grid-cols-2 max-md:grid-cols-1">
+        {stationCommands.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">Sin comandas pendientes para {station.toLowerCase()}.</div>
+        ) : (
+          stationCommands.map((command) => (
+            <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" key={command.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xl font-semibold">{command.table}</p>
+                  <p className="mt-1 text-sm text-slate-500">{command.createdAt}</p>
+                </div>
+                <StationBadge station={command.station} />
+              </div>
+              <div className="mt-5 space-y-3">
+                {command.items.map((item) => (
+                  <div className="flex justify-between gap-3 border-t border-slate-100 pt-3" key={`${command.id}-${item.id}`}>
+                    <div>
+                      <p className="font-semibold">{item.qty} x {item.name}</p>
+                      {item.note ? <p className="mt-1 text-sm text-[#a33e2b]">{item.note}</p> : null}
+                    </div>
+                    <p className="text-sm font-semibold text-slate-500">{money(item.price * item.qty)}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function CheckoutPanel({
   activeTable,
   cart,
@@ -795,6 +994,7 @@ function CheckoutPanel({
   onDiscount,
   onPayment,
   onPrint,
+  onSendCommand,
   onSelectTicket,
   onTip,
   payment,
@@ -813,6 +1013,7 @@ function CheckoutPanel({
   onDiscount: (value: number) => void;
   onPayment: (method: string) => void;
   onPrint: () => void;
+  onSendCommand: () => void;
   onSelectTicket: (ticket: Ticket) => void;
   onTip: (value: number) => void;
   payment: string;
@@ -891,7 +1092,7 @@ function CheckoutPanel({
         {isSavingTicket ? "Guardando ticket..." : "Cobrar y crear ticket"}
       </button>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Enviar cocina</button>
+        <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400" disabled={cart.length === 0} onClick={onSendCommand}>Enviar comanda</button>
         <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400" disabled={!selectedTicket} onClick={onPrint}>Imprimir ticket</button>
       </div>
       <section className="mt-5">
