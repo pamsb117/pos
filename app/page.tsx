@@ -11,11 +11,7 @@ type Product = {
   tag?: string | null;
 };
 
-type CartItem = Product & {
-  qty: number;
-  note?: string;
-};
-
+type CartItem = Product & { qty: number; note?: string };
 type TicketTotals = {
   subtotal: number;
   discountAmount: number;
@@ -23,7 +19,6 @@ type TicketTotals = {
   tipAmount: number;
   total: number;
 };
-
 type Ticket = {
   folio: string;
   table: string;
@@ -32,6 +27,13 @@ type Ticket = {
   createdAt: string;
   items: CartItem[];
   totals: TicketTotals;
+};
+type ProductDraft = {
+  name: string;
+  category: string;
+  price: string;
+  station: "Barra" | "Cocina";
+  tag: string;
 };
 
 const defaultProducts: Product[] = [
@@ -51,10 +53,12 @@ const defaultProducts: Product[] = [
 
 const tables = ["Mostrador", "Mesa 1", "Mesa 2", "Mesa 3", "Terraza"];
 const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia"];
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
+const navItems = ["Venta", "Productos", "Tickets", "Mesas", "Barra", "Reportes"];
+const emptyProductDraft: ProductDraft = { name: "", category: "Cafe", price: "", station: "Barra", tag: "" };
+const money = (value: number) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
 
 export default function Home() {
+  const [activeView, setActiveView] = useState("Venta");
   const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [activeCategory, setActiveCategory] = useState("Todo");
   const [activeTable, setActiveTable] = useState(tables[0]);
@@ -67,42 +71,37 @@ export default function Home() {
   const [payment, setPayment] = useState(paymentMethods[1]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [productDraft, setProductDraft] = useState<ProductDraft>(emptyProductDraft);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [isSavingTicket, setIsSavingTicket] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Base de datos lista");
 
+  const loadProducts = async () => {
+    const response = await fetch("/api/products");
+    if (!response.ok) throw new Error("No se pudieron cargar los productos.");
+    const payload = (await response.json()) as { products: Product[] };
+    setProducts(payload.products);
+  };
+
+  const loadTickets = async () => {
+    const response = await fetch("/api/tickets");
+    if (!response.ok) throw new Error("No se pudieron cargar los tickets.");
+    const payload = (await response.json()) as { tickets: Ticket[] };
+    setTickets(payload.tickets);
+    setSelectedTicket(payload.tickets[0] ?? null);
+  };
+
   useEffect(() => {
-    async function loadPointOfSaleData() {
-      try {
-        const [productsResponse, ticketsResponse] = await Promise.all([
-          fetch("/api/products"),
-          fetch("/api/tickets"),
-        ]);
-
-        if (productsResponse.ok) {
-          const productsPayload = (await productsResponse.json()) as { products: Product[] };
-          setProducts(productsPayload.products);
-        }
-
-        if (ticketsResponse.ok) {
-          const ticketsPayload = (await ticketsResponse.json()) as { tickets: Ticket[] };
-          setTickets(ticketsPayload.tickets);
-          setSelectedTicket(ticketsPayload.tickets[0] ?? null);
-        }
-
-        setStatusMessage("Datos sincronizados");
-      } catch {
-        setStatusMessage("Trabajando con datos locales");
-      }
-    }
-
-    void loadPointOfSaleData();
+    Promise.all([loadProducts(), loadTickets()])
+      .then(() => setStatusMessage("Datos sincronizados"))
+      .catch(() => setStatusMessage("Trabajando con datos locales"));
   }, []);
 
   const categories = ["Todo", ...Array.from(new Set(products.map((product) => product.category)))];
-
-  const visibleProducts = products.filter(
-    (product) => activeCategory === "Todo" || product.category === activeCategory,
-  );
+  const visibleProducts = products.filter((product) => activeCategory === "Todo" || product.category === activeCategory);
+  const cartUnits = cart.reduce((sum, item) => sum + item.qty, 0);
+  const ticketSales = tickets.reduce((sum, ticket) => sum + ticket.totals.total, 0);
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -116,18 +115,14 @@ export default function Home() {
   const addProduct = (product: Product) => {
     setCart((items) => {
       const match = items.find((item) => item.id === product.id);
-      if (match) {
-        return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
-      }
+      if (match) return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
       return [...items, { ...product, qty: 1 }];
     });
   };
 
   const changeQty = (id: number, delta: number) => {
     setCart((items) =>
-      items
-        .map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
-        .filter((item) => item.qty > 0),
+      items.map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)).filter((item) => item.qty > 0),
     );
   };
 
@@ -138,10 +133,7 @@ export default function Home() {
   };
 
   const createTicket = async () => {
-    if (cart.length === 0 || isSavingTicket) {
-      return;
-    }
-
+    if (cart.length === 0 || isSavingTicket) return;
     setIsSavingTicket(true);
     setStatusMessage("Guardando ticket...");
 
@@ -160,22 +152,14 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-
-      if (!response.ok) {
-        throw new Error("No se pudo guardar el ticket.");
-      }
-
+      if (!response.ok) throw new Error("No se pudo guardar el ticket.");
       const payload = (await response.json()) as { ticket: Ticket };
       setTickets((currentTickets) => [payload.ticket, ...currentTickets]);
       setSelectedTicket(payload.ticket);
       clearSale();
       setStatusMessage(`${payload.ticket.folio} guardado`);
     } catch {
-      const fallbackTicket: Ticket = {
-        folio: `LOCAL-${Date.now().toString().slice(-6)}`,
-        ...ticketPayload,
-      };
-
+      const fallbackTicket: Ticket = { folio: `LOCAL-${Date.now().toString().slice(-6)}`, ...ticketPayload };
       setTickets((currentTickets) => [fallbackTicket, ...currentTickets]);
       setSelectedTicket(fallbackTicket);
       clearSale();
@@ -185,75 +169,88 @@ export default function Home() {
     }
   };
 
-  const printTicket = () => {
-    if (selectedTicket) {
-      window.print();
+  const saveProduct = async () => {
+    const payload = {
+      id: editingProductId ?? undefined,
+      name: productDraft.name,
+      category: productDraft.category,
+      price: Number(productDraft.price),
+      station: productDraft.station,
+      tag: productDraft.tag || null,
+    };
+    setIsSavingProduct(true);
+    setStatusMessage(editingProductId ? "Actualizando producto..." : "Creando producto...");
+
+    try {
+      const response = await fetch("/api/products", {
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+        method: editingProductId ? "PATCH" : "POST",
+      });
+      if (!response.ok) throw new Error("No se pudo guardar el producto.");
+      await loadProducts();
+      setProductDraft(emptyProductDraft);
+      setEditingProductId(null);
+      setStatusMessage(editingProductId ? "Producto actualizado" : "Producto creado");
+    } catch {
+      setStatusMessage("No se pudo guardar el producto");
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
-  const readyOrders = cart.filter((item) => item.station === "Barra").length;
-  const kitchenOrders = cart.filter((item) => item.station === "Cocina").length;
-  const ticketSales = tickets.reduce((sum, ticket) => sum + ticket.totals.total, 0);
-  const cartUnits = cart.reduce((sum, item) => sum + item.qty, 0);
+  const startEditProduct = (product: Product) => {
+    setActiveView("Productos");
+    setEditingProductId(product.id);
+    setProductDraft({
+      name: product.name,
+      category: product.category,
+      price: String(product.price),
+      station: product.station,
+      tag: product.tag ?? "",
+    });
+  };
+
+  const deactivateProduct = async (product: Product) => {
+    setStatusMessage("Desactivando producto...");
+    try {
+      const response = await fetch("/api/products", {
+        body: JSON.stringify({ id: product.id }),
+        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("No se pudo desactivar el producto.");
+      setCart((items) => items.filter((item) => item.id !== product.id));
+      await loadProducts();
+      if (editingProductId === product.id) {
+        setProductDraft(emptyProductDraft);
+        setEditingProductId(null);
+      }
+      setStatusMessage("Producto desactivado");
+    } catch {
+      setStatusMessage("No se pudo desactivar el producto");
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#eef1ee] text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-[1720px] grid-cols-[248px_minmax(0,1fr)_420px] max-xl:grid-cols-[210px_minmax(0,1fr)] max-lg:block">
-        <aside className="hidden border-r border-slate-200 bg-[#111b1a] px-4 py-5 text-white max-lg:hidden lg:block">
-          <div className="flex items-center gap-3 rounded-lg bg-white/7 p-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-[#d1533b] text-lg font-bold">M</div>
-            <div>
-              <p className="text-sm font-semibold">Mesa Clara</p>
-              <p className="text-xs text-slate-300">POS Restaurante</p>
-            </div>
-          </div>
-
-          <nav className="mt-7 space-y-1">
-            {["Venta", "Tickets", "Mesas", "Barra", "Inventario", "Reportes"].map((item, index) => (
-              <button
-                className={`flex h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm font-medium transition ${
-                  index === 0 ? "bg-white text-slate-950 shadow-sm" : "text-slate-300 hover:bg-white/8 hover:text-white"
-                }`}
-                key={item}
-              >
-                <span>{item}</span>
-                {item === "Tickets" ? (
-                  <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-slate-300">{tickets.length}</span>
-                ) : null}
-              </button>
-            ))}
-          </nav>
-
-          <div className="mt-8 rounded-lg border border-white/10 bg-white/5 p-4">
-            <p className="text-xs font-medium uppercase text-emerald-200">Corte abierto</p>
-            <p className="mt-3 text-2xl font-semibold">{formatCurrency(8420 + ticketSales)}</p>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-300">
-              <div>
-                <p>Turno</p>
-                <p className="mt-1 font-medium text-white">Caja Principal</p>
-              </div>
-              <div>
-                <p>Cajero</p>
-                <p className="mt-1 font-medium text-white">Ana Lopez</p>
-              </div>
-            </div>
-          </div>
+        <aside className="hidden border-r border-slate-200 bg-[#111b1a] px-4 py-5 text-white lg:block">
+          <BrandBlock ticketCount={tickets.length} total={8420 + ticketSales} activeView={activeView} onNavigate={setActiveView} />
         </aside>
 
         <section className="flex min-h-screen flex-col px-6 py-5 max-lg:min-h-0 max-sm:px-4">
           <header className="mb-5 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase text-[#b64833]">Venta en mostrador y mesas</p>
-                <h1 className="mt-1 text-3xl font-semibold tracking-tight">Nueva venta</h1>
+                <p className="text-xs font-semibold uppercase text-[#b64833]">Sistema operativo del restaurante</p>
+                <h1 className="mt-1 text-3xl font-semibold tracking-tight">{activeView}</h1>
                 <p className="mt-1 text-sm font-medium text-slate-500">{statusMessage}</p>
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
                 {tables.map((table) => (
                   <button
-                    className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
-                      activeTable === table ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-white"
-                    }`}
+                    className={`h-10 rounded-md px-3 text-sm font-semibold transition ${activeTable === table ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}
                     key={table}
                     onClick={() => setActiveTable(table)}
                   >
@@ -265,207 +262,388 @@ export default function Home() {
           </header>
 
           <div className="mb-5 grid grid-cols-4 gap-3 max-md:grid-cols-2">
-            <Metric label="Ventas hoy" value={formatCurrency(8420 + ticketSales)} detail={`${38 + tickets.length} tickets`} />
+            <Metric label="Ventas hoy" value={money(8420 + ticketSales)} detail={`${38 + tickets.length} tickets`} />
             <Metric label="Cuenta activa" value={activeTable} detail={`${cartUnits} articulos`} />
-            <Metric label="Barra" value={`${readyOrders}`} detail="bebidas en cuenta" />
-            <Metric label="Cocina" value={`${kitchenOrders}`} detail="alimentos en cuenta" />
+            <Metric label="Barra" value={`${cart.filter((item) => item.station === "Barra").length}`} detail="bebidas en cuenta" />
+            <Metric label="Cocina" value={`${cart.filter((item) => item.station === "Cocina").length}`} detail="alimentos en cuenta" />
           </div>
 
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">Catalogo</h2>
-              <p className="text-sm text-slate-500">Selecciona productos para agregar a la cuenta.</p>
-            </div>
-            <div className="flex max-w-full gap-2 overflow-x-auto rounded-lg bg-white p-1 shadow-sm">
-              {categories.map((category) => (
-                <button
-                  className={`h-9 shrink-0 rounded-md px-3 text-sm font-semibold transition ${
-                    activeCategory === category ? "bg-[#17443d] text-white" : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                  key={category}
-                  onClick={() => setActiveCategory(category)}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid flex-1 grid-cols-4 gap-3 overflow-y-auto pb-5 max-2xl:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1">
-            {visibleProducts.map((product) => (
-              <button
-                className="group flex min-h-[132px] flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#17443d] hover:shadow-lg"
-                key={product.id}
-                onClick={() => addProduct(product)}
-              >
-                <span>
-                  <span className="flex items-start justify-between gap-3">
-                    <span>
-                      <span className="block text-base font-semibold leading-tight">{product.name}</span>
-                      <span className="mt-2 block text-xs font-medium uppercase text-slate-400">{product.category}</span>
-                    </span>
-                    <StationBadge station={product.station} />
-                  </span>
-                  {product.tag ? (
-                    <span className="mt-3 inline-block rounded bg-[#f7ece8] px-2 py-1 text-xs font-semibold text-[#a33e2b]">
-                      {product.tag}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="flex items-end justify-between">
-                  <span className="text-2xl font-semibold tracking-tight">{formatCurrency(product.price)}</span>
-                  <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
-                    Agregar
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
+          {activeView === "Productos" ? (
+            <ProductAdmin
+              draft={productDraft}
+              editingProductId={editingProductId}
+              isSaving={isSavingProduct}
+              onCancel={() => {
+                setProductDraft(emptyProductDraft);
+                setEditingProductId(null);
+              }}
+              onChange={setProductDraft}
+              onDeactivate={deactivateProduct}
+              onEdit={startEditProduct}
+              onSave={saveProduct}
+              products={products}
+            />
+          ) : (
+            <SaleCatalog activeCategory={activeCategory} categories={categories} onAdd={addProduct} onCategory={setActiveCategory} products={visibleProducts} />
+          )}
         </section>
 
-        <aside className="border-l border-slate-200 bg-white px-5 py-5 shadow-[-18px_0_40px_rgba(15,23,42,0.04)] max-xl:border-t max-lg:border-l-0">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase text-slate-500">Cuenta activa</p>
-                <h2 className="mt-1 text-2xl font-semibold">{activeTable}</h2>
-                <p className="mt-1 text-sm text-slate-500">{cartUnits} articulos en la orden</p>
-              </div>
-              <button
-                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                onClick={clearSale}
-              >
-                Limpiar
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 max-h-[34vh] space-y-3 overflow-y-auto pr-1">
-            {cart.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                La cuenta esta vacia.
-              </div>
-            ) : (
-              cart.map((item) => (
-                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" key={item.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{item.name}</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {formatCurrency(item.price)} · {item.station}
-                      </p>
-                      {item.note ? <p className="mt-1 text-xs font-medium text-[#a33e2b]">{item.note}</p> : null}
-                    </div>
-                    <p className="font-semibold">{formatCurrency(item.price * item.qty)}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-50">
-                      <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => changeQty(item.id, -1)} aria-label={`Quitar ${item.name}`}>
-                        -
-                      </button>
-                      <span className="grid h-9 w-11 place-items-center border-x border-slate-300 bg-white text-sm font-semibold">
-                        {item.qty}
-                      </span>
-                      <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => changeQty(item.id, 1)} aria-label={`Agregar ${item.name}`}>
-                        +
-                      </button>
-                    </div>
-                    <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100">Nota</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="mt-4 rounded-xl border border-slate-200 p-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Control label="Descuento" value={discount} suffix="%" onChange={setDiscount} max={30} />
-              <Control label="Propina" value={tip} suffix="%" onChange={setTip} max={25} />
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
-              <Row label="Descuento" value={`-${formatCurrency(totals.discountAmount)}`} />
-              <Row label="IVA" value={formatCurrency(totals.tax)} />
-              <Row label="Propina" value={formatCurrency(totals.tipAmount)} />
-              <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                <span className="text-sm font-semibold text-slate-500">Total a cobrar</span>
-                <span className="text-3xl font-semibold tracking-tight">{formatCurrency(totals.total)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {paymentMethods.map((method) => (
-              <button
-                className={`h-11 rounded-lg border px-2 text-sm font-semibold transition ${
-                  payment === method ? "border-[#17443d] bg-[#17443d] text-white shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                key={method}
-                onClick={() => setPayment(method)}
-              >
-                {method}
-              </button>
-            ))}
-          </div>
-
-          <button
-            className="mt-3 w-full rounded-lg bg-[#c64d36] px-4 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-[#a93f2c] disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={cart.length === 0}
-            onClick={createTicket}
-          >
-            {isSavingTicket ? "Guardando ticket..." : "Cobrar y crear ticket"}
-          </button>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Enviar cocina
-            </button>
-            <button
-              className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={!selectedTicket}
-              onClick={printTicket}
-            >
-              Imprimir ticket
-            </button>
-          </div>
-
-          <section className="mt-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold">Tickets recientes</h3>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">{tickets.length}</span>
-            </div>
-            <div className="max-h-[190px] space-y-2 overflow-y-auto pr-1">
-              {tickets.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-                  Al cobrar una cuenta se generara el primer ticket.
-                </div>
-              ) : (
-                tickets.map((ticket) => (
-                  <button
-                    className={`w-full rounded-xl border p-3 text-left transition ${
-                      selectedTicket?.folio === ticket.folio
-                        ? "border-[#17443d] bg-[#edf7f4]"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    }`}
-                    key={ticket.folio}
-                    onClick={() => setSelectedTicket(ticket)}
-                  >
-                    <span className="flex items-center justify-between gap-3">
-                      <span className="font-semibold">{ticket.folio}</span>
-                      <span className="font-semibold">{formatCurrency(ticket.totals.total)}</span>
-                    </span>
-                    <span className="mt-1 block text-sm text-slate-500">
-                      {ticket.table} · {ticket.payment} · {ticket.createdAt}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          {selectedTicket ? <TicketPreview ticket={selectedTicket} /> : null}
-        </aside>
+        <CheckoutPanel
+          activeTable={activeTable}
+          cart={cart}
+          discount={discount}
+          isSavingTicket={isSavingTicket}
+          onChangeQty={changeQty}
+          onClear={clearSale}
+          onCreateTicket={createTicket}
+          onDiscount={setDiscount}
+          onPayment={setPayment}
+          onPrint={() => selectedTicket && window.print()}
+          onSelectTicket={setSelectedTicket}
+          onTip={setTip}
+          payment={payment}
+          selectedTicket={selectedTicket}
+          tickets={tickets}
+          tip={tip}
+          totals={totals}
+        />
       </div>
     </main>
+  );
+}
+
+function BrandBlock({
+  activeView,
+  onNavigate,
+  ticketCount,
+  total,
+}: {
+  activeView: string;
+  onNavigate: (view: string) => void;
+  ticketCount: number;
+  total: number;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-3 rounded-lg bg-white/7 p-3">
+        <div className="grid h-10 w-10 place-items-center rounded-md bg-[#d1533b] text-lg font-bold">M</div>
+        <div>
+          <p className="text-sm font-semibold">Mesa Clara</p>
+          <p className="text-xs text-slate-300">POS Restaurante</p>
+        </div>
+      </div>
+      <nav className="mt-7 space-y-1">
+        {navItems.map((item) => (
+          <button
+            className={`flex h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm font-medium transition ${
+              activeView === item ? "bg-white text-slate-950 shadow-sm" : "text-slate-300 hover:bg-white/8 hover:text-white"
+            }`}
+            key={item}
+            onClick={() => onNavigate(item)}
+          >
+            <span>{item}</span>
+            {item === "Tickets" ? <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-slate-300">{ticketCount}</span> : null}
+          </button>
+        ))}
+      </nav>
+      <div className="mt-8 rounded-lg border border-white/10 bg-white/5 p-4">
+        <p className="text-xs font-medium uppercase text-emerald-200">Corte abierto</p>
+        <p className="mt-3 text-2xl font-semibold">{money(total)}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-300">
+          <div>
+            <p>Turno</p>
+            <p className="mt-1 font-medium text-white">Caja Principal</p>
+          </div>
+          <div>
+            <p>Cajero</p>
+            <p className="mt-1 font-medium text-white">Ana Lopez</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SaleCatalog({
+  activeCategory,
+  categories,
+  onAdd,
+  onCategory,
+  products,
+}: {
+  activeCategory: string;
+  categories: string[];
+  onAdd: (product: Product) => void;
+  onCategory: (category: string) => void;
+  products: Product[];
+}) {
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Catalogo</h2>
+          <p className="text-sm text-slate-500">Selecciona productos para agregar a la cuenta.</p>
+        </div>
+        <div className="flex max-w-full gap-2 overflow-x-auto rounded-lg bg-white p-1 shadow-sm">
+          {categories.map((category) => (
+            <button
+              className={`h-9 shrink-0 rounded-md px-3 text-sm font-semibold transition ${activeCategory === category ? "bg-[#17443d] text-white" : "text-slate-600 hover:bg-slate-100"}`}
+              key={category}
+              onClick={() => onCategory(category)}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid flex-1 grid-cols-4 gap-3 overflow-y-auto pb-5 max-2xl:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1">
+        {products.map((product) => (
+          <button
+            className="group flex min-h-[132px] flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#17443d] hover:shadow-lg"
+            key={product.id}
+            onClick={() => onAdd(product)}
+          >
+            <span>
+              <span className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="block text-base font-semibold leading-tight">{product.name}</span>
+                  <span className="mt-2 block text-xs font-medium uppercase text-slate-400">{product.category}</span>
+                </span>
+                <StationBadge station={product.station} />
+              </span>
+              {product.tag ? <span className="mt-3 inline-block rounded bg-[#f7ece8] px-2 py-1 text-xs font-semibold text-[#a33e2b]">{product.tag}</span> : null}
+            </span>
+            <span className="flex items-end justify-between">
+              <span className="text-2xl font-semibold tracking-tight">{money(product.price)}</span>
+              <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">Agregar</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ProductAdmin({
+  draft,
+  editingProductId,
+  isSaving,
+  onCancel,
+  onChange,
+  onDeactivate,
+  onEdit,
+  onSave,
+  products,
+}: {
+  draft: ProductDraft;
+  editingProductId: number | null;
+  isSaving: boolean;
+  onCancel: () => void;
+  onChange: (draft: ProductDraft) => void;
+  onDeactivate: (product: Product) => void;
+  onEdit: (product: Product) => void;
+  onSave: () => void;
+  products: Product[];
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[360px_minmax(0,1fr)] gap-4 max-xl:grid-cols-1">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase text-[#b64833]">{editingProductId ? "Editar producto" : "Nuevo producto"}</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">Catalogo del menu</h2>
+        <div className="mt-5 space-y-4">
+          <TextField label="Nombre" onChange={(value) => onChange({ ...draft, name: value })} placeholder="Ej. Espresso doble" value={draft.name} />
+          <TextField label="Categoria" onChange={(value) => onChange({ ...draft, category: value })} placeholder="Cafe, Bebidas, Alimentos" value={draft.category} />
+          <TextField label="Precio" onChange={(value) => onChange({ ...draft, price: value })} placeholder="0" type="number" value={draft.price} />
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-700">Estacion</span>
+            <select
+              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-[#17443d]"
+              onChange={(event) => onChange({ ...draft, station: event.target.value as Product["station"] })}
+              value={draft.station}
+            >
+              <option>Barra</option>
+              <option>Cocina</option>
+            </select>
+          </label>
+          <TextField label="Etiqueta" onChange={(value) => onChange({ ...draft, tag: value })} placeholder="Popular, Frio, Brunch" value={draft.tag} />
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-lg bg-[#17443d] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={isSaving || !draft.name || !draft.category || Number(draft.price) <= 0}
+            onClick={onSave}
+          >
+            {isSaving ? "Guardando..." : editingProductId ? "Guardar cambios" : "Crear producto"}
+          </button>
+          <button className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={onCancel}>
+            Cancelar
+          </button>
+        </div>
+      </section>
+
+      <section className="min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-lg font-semibold">Productos activos</h2>
+          <p className="text-sm text-slate-500">{products.length} productos disponibles para venta</p>
+        </div>
+        <div className="max-h-[calc(100vh-250px)] overflow-y-auto">
+          {products.map((product) => (
+            <div className="grid grid-cols-[minmax(0,1fr)_120px_120px_150px] items-center gap-3 border-b border-slate-100 px-5 py-4 max-lg:grid-cols-1" key={product.id}>
+              <div>
+                <p className="font-semibold">{product.name}</p>
+                <p className="mt-1 text-sm text-slate-500">{product.category}{product.tag ? ` · ${product.tag}` : ""}</p>
+              </div>
+              <StationBadge station={product.station} />
+              <p className="text-lg font-semibold">{money(product.price)}</p>
+              <div className="flex gap-2">
+                <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => onEdit(product)}>
+                  Editar
+                </button>
+                <button className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => onDeactivate(product)}>
+                  Desactivar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CheckoutPanel({
+  activeTable,
+  cart,
+  discount,
+  isSavingTicket,
+  onChangeQty,
+  onClear,
+  onCreateTicket,
+  onDiscount,
+  onPayment,
+  onPrint,
+  onSelectTicket,
+  onTip,
+  payment,
+  selectedTicket,
+  tickets,
+  tip,
+  totals,
+}: {
+  activeTable: string;
+  cart: CartItem[];
+  discount: number;
+  isSavingTicket: boolean;
+  onChangeQty: (id: number, delta: number) => void;
+  onClear: () => void;
+  onCreateTicket: () => void;
+  onDiscount: (value: number) => void;
+  onPayment: (method: string) => void;
+  onPrint: () => void;
+  onSelectTicket: (ticket: Ticket) => void;
+  onTip: (value: number) => void;
+  payment: string;
+  selectedTicket: Ticket | null;
+  tickets: Ticket[];
+  tip: number;
+  totals: TicketTotals;
+}) {
+  const cartUnits = cart.reduce((sum, item) => sum + item.qty, 0);
+  return (
+    <aside className="border-l border-slate-200 bg-white px-5 py-5 shadow-[-18px_0_40px_rgba(15,23,42,0.04)] max-xl:border-t max-lg:border-l-0">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500">Cuenta activa</p>
+            <h2 className="mt-1 text-2xl font-semibold">{activeTable}</h2>
+            <p className="mt-1 text-sm text-slate-500">{cartUnits} articulos en la orden</p>
+          </div>
+          <button className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={onClear}>Limpiar</button>
+        </div>
+      </div>
+      <div className="mt-4 max-h-[34vh] space-y-3 overflow-y-auto pr-1">
+        {cart.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">La cuenta esta vacia.</div>
+        ) : (
+          cart.map((item) => (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" key={item.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{item.name}</p>
+                  <p className="mt-1 text-sm text-slate-500">{money(item.price)} · {item.station}</p>
+                  {item.note ? <p className="mt-1 text-xs font-medium text-[#a33e2b]">{item.note}</p> : null}
+                </div>
+                <p className="font-semibold">{money(item.price * item.qty)}</p>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <div className="flex items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-50">
+                  <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => onChangeQty(item.id, -1)} aria-label={`Quitar ${item.name}`}>-</button>
+                  <span className="grid h-9 w-11 place-items-center border-x border-slate-300 bg-white text-sm font-semibold">{item.qty}</span>
+                  <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => onChangeQty(item.id, 1)} aria-label={`Agregar ${item.name}`}>+</button>
+                </div>
+                <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100">Nota</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="mt-4 rounded-xl border border-slate-200 p-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Control label="Descuento" value={discount} suffix="%" onChange={onDiscount} max={30} />
+          <Control label="Propina" value={tip} suffix="%" onChange={onTip} max={25} />
+        </div>
+        <div className="mt-4 space-y-2 text-sm">
+          <Row label="Subtotal" value={money(totals.subtotal)} />
+          <Row label="Descuento" value={`-${money(totals.discountAmount)}`} />
+          <Row label="IVA" value={money(totals.tax)} />
+          <Row label="Propina" value={money(totals.tipAmount)} />
+          <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
+            <span className="text-sm font-semibold text-slate-500">Total a cobrar</span>
+            <span className="text-3xl font-semibold tracking-tight">{money(totals.total)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {paymentMethods.map((method) => (
+          <button
+            className={`h-11 rounded-lg border px-2 text-sm font-semibold transition ${payment === method ? "border-[#17443d] bg-[#17443d] text-white shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}
+            key={method}
+            onClick={() => onPayment(method)}
+          >
+            {method}
+          </button>
+        ))}
+      </div>
+      <button className="mt-3 w-full rounded-lg bg-[#c64d36] px-4 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-[#a93f2c] disabled:cursor-not-allowed disabled:bg-slate-300" disabled={cart.length === 0} onClick={onCreateTicket}>
+        {isSavingTicket ? "Guardando ticket..." : "Cobrar y crear ticket"}
+      </button>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Enviar cocina</button>
+        <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400" disabled={!selectedTicket} onClick={onPrint}>Imprimir ticket</button>
+      </div>
+      <section className="mt-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold">Tickets recientes</h3>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">{tickets.length}</span>
+        </div>
+        <div className="max-h-[190px] space-y-2 overflow-y-auto pr-1">
+          {tickets.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Al cobrar una cuenta se generara el primer ticket.</div>
+          ) : (
+            tickets.map((ticket) => (
+              <button className={`w-full rounded-xl border p-3 text-left transition ${selectedTicket?.folio === ticket.folio ? "border-[#17443d] bg-[#edf7f4]" : "border-slate-200 bg-white hover:bg-slate-50"}`} key={ticket.folio} onClick={() => onSelectTicket(ticket)}>
+                <span className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">{ticket.folio}</span>
+                  <span className="font-semibold">{money(ticket.totals.total)}</span>
+                </span>
+                <span className="mt-1 block text-sm text-slate-500">{ticket.table} · {ticket.payment} · {ticket.createdAt}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+      {selectedTicket ? <TicketPreview ticket={selectedTicket} /> : null}
+    </aside>
   );
 }
 
@@ -480,16 +658,7 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 }
 
 function StationBadge({ station }: { station: Product["station"] }) {
-  const isBar = station === "Barra";
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        isBar ? "bg-[#edf7f4] text-[#17443d]" : "bg-[#fff3df] text-[#9a5d12]"
-      }`}
-    >
-      {station}
-    </span>
-  );
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${station === "Barra" ? "bg-[#edf7f4] text-[#17443d]" : "bg-[#fff3df] text-[#9a5d12]"}`}>{station}</span>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -501,36 +670,23 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Control({
-  label,
-  value,
-  suffix,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  suffix: string;
-  max: number;
-  onChange: (value: number) => void;
-}) {
+function Control({ label, value, suffix, max, onChange }: { label: string; value: number; suffix: string; max: number; onChange: (value: number) => void }) {
   return (
     <label className="block">
       <span className="mb-2 flex items-center justify-between text-sm">
         <span className="font-semibold text-slate-700">{label}</span>
-        <span className="font-semibold text-slate-500">
-          {value}
-          {suffix}
-        </span>
+        <span className="font-semibold text-slate-500">{value}{suffix}</span>
       </span>
-      <input
-        className="w-full accent-[#17443d]"
-        max={max}
-        min={0}
-        onChange={(event) => onChange(Number(event.target.value))}
-        type="range"
-        value={value}
-      />
+      <input className="w-full accent-[#17443d]" max={max} min={0} onChange={(event) => onChange(Number(event.target.value))} type="range" value={value} />
+    </label>
+  );
+}
+
+function TextField({ label, onChange, placeholder, type = "text", value }: { label: string; onChange: (value: string) => void; placeholder: string; type?: string; value: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
+      <input className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-[#17443d]" min={type === "number" ? 0 : undefined} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={type} value={value} />
     </label>
   );
 }
@@ -553,23 +709,21 @@ function TicketPreview({ ticket }: { ticket: Ticket }) {
         {ticket.items.map((item) => (
           <div key={`${ticket.folio}-${item.id}`}>
             <div className="flex justify-between gap-3">
-              <span>
-                {item.qty} x {item.name}
-              </span>
-              <span>{formatCurrency(item.price * item.qty)}</span>
+              <span>{item.qty} x {item.name}</span>
+              <span>{money(item.price * item.qty)}</span>
             </div>
             {item.note ? <p className="text-xs text-slate-500">Nota: {item.note}</p> : null}
           </div>
         ))}
       </div>
       <div className="mt-3 border-t border-dashed border-slate-400 pt-2">
-        <Row label="Subtotal" value={formatCurrency(ticket.totals.subtotal)} />
-        <Row label="Descuento" value={`-${formatCurrency(ticket.totals.discountAmount)}`} />
-        <Row label="IVA" value={formatCurrency(ticket.totals.tax)} />
-        <Row label="Propina" value={formatCurrency(ticket.totals.tipAmount)} />
+        <Row label="Subtotal" value={money(ticket.totals.subtotal)} />
+        <Row label="Descuento" value={`-${money(ticket.totals.discountAmount)}`} />
+        <Row label="IVA" value={money(ticket.totals.tax)} />
+        <Row label="Propina" value={money(ticket.totals.tipAmount)} />
         <div className="mt-2 flex justify-between text-base font-bold">
           <span>Total</span>
-          <span>{formatCurrency(ticket.totals.total)}</span>
+          <span>{money(ticket.totals.total)}</span>
         </div>
         <Row label="Pago" value={ticket.payment} />
       </div>

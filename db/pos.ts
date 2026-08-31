@@ -17,6 +17,15 @@ export type ProductRecord = {
   tag: string | null;
 };
 
+export type ProductInput = {
+  id?: number;
+  name: string;
+  category: string;
+  price: number;
+  station: "Barra" | "Cocina";
+  tag?: string | null;
+};
+
 export type TicketItemInput = ProductRecord & {
   qty: number;
   note?: string;
@@ -90,6 +99,72 @@ export async function listProducts() {
     )
     .all<ProductRecord>();
   return result.results ?? [];
+}
+
+function normalizeProduct(input: ProductInput) {
+  const name = input.name.trim();
+  const category = input.category.trim();
+  const station = input.station === "Cocina" ? "Cocina" : "Barra";
+  const price = Math.max(0, Math.round(Number(input.price)));
+  const tag = input.tag?.trim() ? input.tag.trim() : null;
+
+  if (!name || !category || price <= 0) {
+    throw new Error("Nombre, categoria y precio son obligatorios.");
+  }
+
+  return { name, category, price, station, tag };
+}
+
+export async function createProduct(input: ProductInput) {
+  await ensureSchema();
+  const db = getDb();
+  const product = normalizeProduct(input);
+  const created = await db
+    .prepare(
+      `INSERT INTO products (name, category, price, station, tag)
+      VALUES (?, ?, ?, ?, ?)
+      RETURNING id, name, category, price, station, tag`,
+    )
+    .bind(product.name, product.category, product.price, product.station, product.tag)
+    .first<ProductRecord>();
+
+  if (!created) {
+    throw new Error("No se pudo crear el producto.");
+  }
+
+  return created;
+}
+
+export async function updateProduct(input: ProductInput) {
+  if (!input.id) {
+    throw new Error("Falta el producto a editar.");
+  }
+
+  await ensureSchema();
+  const db = getDb();
+  const product = normalizeProduct(input);
+  const updated = await db
+    .prepare(
+      `UPDATE products
+      SET name = ?, category = ?, price = ?, station = ?, tag = ?
+      WHERE id = ? AND active = 1
+      RETURNING id, name, category, price, station, tag`,
+    )
+    .bind(product.name, product.category, product.price, product.station, product.tag, input.id)
+    .first<ProductRecord>();
+
+  if (!updated) {
+    throw new Error("No se pudo actualizar el producto.");
+  }
+
+  return updated;
+}
+
+export async function deactivateProduct(id: number) {
+  await ensureSchema();
+  const db = getDb();
+  await db.prepare("UPDATE products SET active = 0 WHERE id = ?").bind(id).run();
+  return { id };
 }
 
 export async function listTickets() {
