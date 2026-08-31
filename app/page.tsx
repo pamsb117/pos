@@ -78,13 +78,7 @@ export default function Home() {
     const base = subtotal - discountAmount;
     const tax = Math.round(base * 0.16);
     const tipAmount = Math.round(base * (tip / 100));
-    return {
-      subtotal,
-      discountAmount,
-      tax,
-      tipAmount,
-      total: base + tax + tipAmount,
-    };
+    return { subtotal, discountAmount, tax, tipAmount, total: base + tax + tipAmount };
   }, [cart, discount, tip]);
 
   const addProduct = (product: Product) => {
@@ -121,10 +115,7 @@ export default function Home() {
       table: activeTable,
       cashier: "Ana Lopez",
       payment,
-      createdAt: new Date().toLocaleString("es-MX", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }),
+      createdAt: new Date().toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
       items: cart.map((item) => ({ ...item })),
       totals: { ...totals },
     };
@@ -143,172 +134,210 @@ export default function Home() {
   const readyOrders = cart.filter((item) => item.station === "Barra").length;
   const kitchenOrders = cart.filter((item) => item.station === "Cocina").length;
   const ticketSales = tickets.reduce((sum, ticket) => sum + ticket.totals.total, 0);
+  const cartUnits = cart.reduce((sum, item) => sum + item.qty, 0);
 
   return (
-    <main className="min-h-screen bg-[#f6f4ef] text-stone-950">
-      <div className="mx-auto grid min-h-screen max-w-[1600px] grid-cols-[220px_minmax(0,1fr)_390px] gap-0 max-xl:grid-cols-[180px_minmax(0,1fr)] max-lg:block">
-        <aside className="border-r border-stone-200 bg-[#23302d] px-4 py-5 text-white max-lg:hidden">
-          <div className="mb-8">
-            <p className="text-xs font-medium uppercase text-emerald-200">Corte abierto</p>
-            <h1 className="mt-1 text-2xl font-semibold">Mesa Clara POS</h1>
+    <main className="min-h-screen bg-[#eef1ee] text-slate-950">
+      <div className="mx-auto grid min-h-screen max-w-[1720px] grid-cols-[248px_minmax(0,1fr)_420px] max-xl:grid-cols-[210px_minmax(0,1fr)] max-lg:block">
+        <aside className="hidden border-r border-slate-200 bg-[#111b1a] px-4 py-5 text-white max-lg:hidden lg:block">
+          <div className="flex items-center gap-3 rounded-lg bg-white/7 p-3">
+            <div className="grid h-10 w-10 place-items-center rounded-md bg-[#d1533b] text-lg font-bold">M</div>
+            <div>
+              <p className="text-sm font-semibold">Mesa Clara</p>
+              <p className="text-xs text-slate-300">POS Restaurante</p>
+            </div>
           </div>
-          <nav className="space-y-2">
+
+          <nav className="mt-7 space-y-1">
             {["Venta", "Tickets", "Mesas", "Barra", "Inventario", "Reportes"].map((item, index) => (
               <button
-                className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                  index === 0 ? "bg-white text-stone-950" : "text-stone-200 hover:bg-white/10"
+                className={`flex h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm font-medium transition ${
+                  index === 0 ? "bg-white text-slate-950 shadow-sm" : "text-slate-300 hover:bg-white/8 hover:text-white"
                 }`}
                 key={item}
               >
-                {item}
+                <span>{item}</span>
+                {item === "Tickets" ? (
+                  <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-slate-300">{tickets.length}</span>
+                ) : null}
               </button>
             ))}
           </nav>
-          <div className="mt-10 border-t border-white/15 pt-5">
-            <p className="text-xs text-stone-300">Turno</p>
-            <p className="mt-1 font-medium">Caja Principal</p>
-            <p className="mt-5 text-xs text-stone-300">Cajero</p>
-            <p className="mt-1 font-medium">Ana Lopez</p>
+
+          <div className="mt-8 rounded-lg border border-white/10 bg-white/5 p-4">
+            <p className="text-xs font-medium uppercase text-emerald-200">Corte abierto</p>
+            <p className="mt-3 text-2xl font-semibold">{formatCurrency(8420 + ticketSales)}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-300">
+              <div>
+                <p>Turno</p>
+                <p className="mt-1 font-medium text-white">Caja Principal</p>
+              </div>
+              <div>
+                <p>Cajero</p>
+                <p className="mt-1 font-medium text-white">Ana Lopez</p>
+              </div>
+            </div>
           </div>
         </aside>
 
-        <section className="flex min-h-screen flex-col px-5 py-5 max-lg:min-h-0">
-          <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-emerald-700">Restaurante / Cafeteria</p>
-              <h2 className="text-3xl font-semibold tracking-tight">Nueva venta</h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {tables.map((table) => (
-                <button
-                  className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                    activeTable === table
-                      ? "border-stone-950 bg-stone-950 text-white"
-                      : "border-stone-300 bg-white text-stone-700"
-                  }`}
-                  key={table}
-                  onClick={() => setActiveTable(table)}
-                >
-                  {table}
-                </button>
-              ))}
+        <section className="flex min-h-screen flex-col px-6 py-5 max-lg:min-h-0 max-sm:px-4">
+          <header className="mb-5 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-[#b64833]">Venta en mostrador y mesas</p>
+                <h1 className="mt-1 text-3xl font-semibold tracking-tight">Nueva venta</h1>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
+                {tables.map((table) => (
+                  <button
+                    className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
+                      activeTable === table ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-white"
+                    }`}
+                    key={table}
+                    onClick={() => setActiveTable(table)}
+                  >
+                    {table}
+                  </button>
+                ))}
+              </div>
             </div>
           </header>
 
           <div className="mb-5 grid grid-cols-4 gap-3 max-md:grid-cols-2">
             <Metric label="Ventas hoy" value={formatCurrency(8420 + ticketSales)} detail={`${38 + tickets.length} tickets`} />
-            <Metric label="Orden activa" value={activeTable} detail={`${cart.length} partidas`} />
-            <Metric label="Barra" value={`${readyOrders}`} detail="bebidas pendientes" />
-            <Metric label="Cocina" value={`${kitchenOrders}`} detail="alimentos pendientes" />
+            <Metric label="Cuenta activa" value={activeTable} detail={`${cartUnits} articulos`} />
+            <Metric label="Barra" value={`${readyOrders}`} detail="bebidas en cuenta" />
+            <Metric label="Cocina" value={`${kitchenOrders}`} detail="alimentos en cuenta" />
           </div>
 
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-            {categories.map((category) => (
-              <button
-                className={`shrink-0 rounded-md border px-4 py-2 text-sm font-medium ${
-                  activeCategory === category
-                    ? "border-emerald-900 bg-emerald-900 text-white"
-                    : "border-stone-300 bg-white text-stone-700"
-                }`}
-                key={category}
-                onClick={() => setActiveCategory(category)}
-              >
-                {category}
-              </button>
-            ))}
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Catalogo</h2>
+              <p className="text-sm text-slate-500">Selecciona productos para agregar a la cuenta.</p>
+            </div>
+            <div className="flex max-w-full gap-2 overflow-x-auto rounded-lg bg-white p-1 shadow-sm">
+              {categories.map((category) => (
+                <button
+                  className={`h-9 shrink-0 rounded-md px-3 text-sm font-semibold transition ${
+                    activeCategory === category ? "bg-[#17443d] text-white" : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  key={category}
+                  onClick={() => setActiveCategory(category)}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="grid flex-1 grid-cols-4 gap-3 overflow-y-auto pb-5 max-2xl:grid-cols-3 max-md:grid-cols-2">
+          <div className="grid flex-1 grid-cols-4 gap-3 overflow-y-auto pb-5 max-2xl:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1">
             {visibleProducts.map((product) => (
               <button
-                className="group flex min-h-[138px] flex-col justify-between rounded-lg border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-800 hover:shadow-md"
+                className="group flex min-h-[132px] flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#17443d] hover:shadow-lg"
                 key={product.id}
                 onClick={() => addProduct(product)}
               >
                 <span>
                   <span className="flex items-start justify-between gap-3">
-                    <span className="text-base font-semibold leading-tight">{product.name}</span>
-                    <span className="rounded bg-stone-100 px-2 py-1 text-xs font-medium text-stone-600">
-                      {product.station}
+                    <span>
+                      <span className="block text-base font-semibold leading-tight">{product.name}</span>
+                      <span className="mt-2 block text-xs font-medium uppercase text-slate-400">{product.category}</span>
                     </span>
+                    <StationBadge station={product.station} />
                   </span>
-                  {product.tag ? <span className="mt-3 inline-block text-xs text-emerald-700">{product.tag}</span> : null}
+                  {product.tag ? (
+                    <span className="mt-3 inline-block rounded bg-[#f7ece8] px-2 py-1 text-xs font-semibold text-[#a33e2b]">
+                      {product.tag}
+                    </span>
+                  ) : null}
                 </span>
-                <span className="text-xl font-semibold">{formatCurrency(product.price)}</span>
+                <span className="flex items-end justify-between">
+                  <span className="text-2xl font-semibold tracking-tight">{formatCurrency(product.price)}</span>
+                  <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
+                    Agregar
+                  </span>
+                </span>
               </button>
             ))}
           </div>
         </section>
 
-        <aside className="border-l border-stone-200 bg-white px-5 py-5 max-xl:border-t max-lg:border-l-0">
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-stone-500">Cuenta activa</p>
-              <h3 className="text-2xl font-semibold">{activeTable}</h3>
+        <aside className="border-l border-slate-200 bg-white px-5 py-5 shadow-[-18px_0_40px_rgba(15,23,42,0.04)] max-xl:border-t max-lg:border-l-0">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-slate-500">Cuenta activa</p>
+                <h2 className="mt-1 text-2xl font-semibold">{activeTable}</h2>
+                <p className="mt-1 text-sm text-slate-500">{cartUnits} articulos en la orden</p>
+              </div>
+              <button
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={clearSale}
+              >
+                Limpiar
+              </button>
             </div>
-            <button className="rounded-md border border-stone-300 px-3 py-2 text-sm font-medium" onClick={clearSale}>
-              Limpiar
-            </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="mt-4 max-h-[34vh] space-y-3 overflow-y-auto pr-1">
             {cart.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-stone-300 p-5 text-center text-sm text-stone-500">
-                Sin productos en la cuenta
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                La cuenta esta vacia.
               </div>
             ) : (
               cart.map((item) => (
-                <div className="rounded-lg border border-stone-200 p-3" key={item.id}>
+                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" key={item.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold">{item.name}</p>
-                      <p className="text-sm text-stone-500">
+                      <p className="mt-1 text-sm text-slate-500">
                         {formatCurrency(item.price)} · {item.station}
                       </p>
-                      {item.note ? <p className="mt-1 text-xs text-emerald-700">{item.note}</p> : null}
+                      {item.note ? <p className="mt-1 text-xs font-medium text-[#a33e2b]">{item.note}</p> : null}
                     </div>
                     <p className="font-semibold">{formatCurrency(item.price * item.qty)}</p>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center overflow-hidden rounded-md border border-stone-300">
-                      <button className="h-9 w-9 text-lg" onClick={() => changeQty(item.id, -1)} aria-label={`Quitar ${item.name}`}>
+                    <div className="flex items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-50">
+                      <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => changeQty(item.id, -1)} aria-label={`Quitar ${item.name}`}>
                         -
                       </button>
-                      <span className="grid h-9 w-10 place-items-center border-x border-stone-300 text-sm font-semibold">
+                      <span className="grid h-9 w-11 place-items-center border-x border-slate-300 bg-white text-sm font-semibold">
                         {item.qty}
                       </span>
-                      <button className="h-9 w-9 text-lg" onClick={() => changeQty(item.id, 1)} aria-label={`Agregar ${item.name}`}>
+                      <button className="h-9 w-9 text-lg hover:bg-white" onClick={() => changeQty(item.id, 1)} aria-label={`Agregar ${item.name}`}>
                         +
                       </button>
                     </div>
-                    <button className="text-sm font-medium text-stone-500">Nota</button>
+                    <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100">Nota</button>
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          <div className="mt-5 space-y-3 border-t border-stone-200 pt-5">
-            <Control label="Descuento" value={discount} suffix="%" onChange={setDiscount} max={30} />
-            <Control label="Propina" value={tip} suffix="%" onChange={setTip} max={25} />
-          </div>
-
-          <div className="mt-5 space-y-2 text-sm">
-            <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
-            <Row label="Descuento" value={`-${formatCurrency(totals.discountAmount)}`} />
-            <Row label="IVA" value={formatCurrency(totals.tax)} />
-            <Row label="Propina" value={formatCurrency(totals.tipAmount)} />
-            <div className="flex items-center justify-between border-t border-stone-200 pt-3 text-xl font-semibold">
-              <span>Total</span>
-              <span>{formatCurrency(totals.total)}</span>
+          <div className="mt-4 rounded-xl border border-slate-200 p-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Control label="Descuento" value={discount} suffix="%" onChange={setDiscount} max={30} />
+              <Control label="Propina" value={tip} suffix="%" onChange={setTip} max={25} />
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
+              <Row label="Descuento" value={`-${formatCurrency(totals.discountAmount)}`} />
+              <Row label="IVA" value={formatCurrency(totals.tax)} />
+              <Row label="Propina" value={formatCurrency(totals.tipAmount)} />
+              <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
+                <span className="text-sm font-semibold text-slate-500">Total a cobrar</span>
+                <span className="text-3xl font-semibold tracking-tight">{formatCurrency(totals.total)}</span>
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="mt-4 grid grid-cols-3 gap-2">
             {paymentMethods.map((method) => (
               <button
-                className={`rounded-md border px-2 py-2 text-sm font-medium ${
-                  payment === method ? "border-emerald-900 bg-emerald-900 text-white" : "border-stone-300"
+                className={`h-11 rounded-lg border px-2 text-sm font-semibold transition ${
+                  payment === method ? "border-[#17443d] bg-[#17443d] text-white shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
                 key={method}
                 onClick={() => setPayment(method)}
@@ -319,16 +348,18 @@ export default function Home() {
           </div>
 
           <button
-            className="mt-4 w-full rounded-md bg-[#b7412e] px-4 py-4 text-base font-semibold text-white shadow-sm hover:bg-[#9f3525] disabled:cursor-not-allowed disabled:bg-stone-300"
+            className="mt-3 w-full rounded-lg bg-[#c64d36] px-4 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-[#a93f2c] disabled:cursor-not-allowed disabled:bg-slate-300"
             disabled={cart.length === 0}
             onClick={createTicket}
           >
-            Cobrar y crear ticket {formatCurrency(totals.total)}
+            Cobrar y crear ticket
           </button>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button className="rounded-md border border-stone-300 px-3 py-3 text-sm font-medium">Enviar cocina</button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Enviar cocina
+            </button>
             <button
-              className="rounded-md border border-stone-300 px-3 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:text-stone-400"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
               disabled={!selectedTicket}
               onClick={printTicket}
             >
@@ -336,23 +367,23 @@ export default function Home() {
             </button>
           </div>
 
-          <section className="mt-5 border-t border-stone-200 pt-5">
+          <section className="mt-5">
             <div className="mb-3 flex items-center justify-between">
-              <h4 className="font-semibold">Tickets recientes</h4>
-              <span className="text-sm text-stone-500">{tickets.length} creados</span>
+              <h3 className="font-semibold">Tickets recientes</h3>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">{tickets.length}</span>
             </div>
-            <div className="space-y-2">
+            <div className="max-h-[190px] space-y-2 overflow-y-auto pr-1">
               {tickets.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500">
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
                   Al cobrar una cuenta se generara el primer ticket.
                 </div>
               ) : (
                 tickets.map((ticket) => (
                   <button
-                    className={`w-full rounded-lg border p-3 text-left ${
+                    className={`w-full rounded-xl border p-3 text-left transition ${
                       selectedTicket?.folio === ticket.folio
-                        ? "border-emerald-900 bg-emerald-50"
-                        : "border-stone-200 bg-white"
+                        ? "border-[#17443d] bg-[#edf7f4]"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
                     }`}
                     key={ticket.folio}
                     onClick={() => setSelectedTicket(ticket)}
@@ -361,7 +392,7 @@ export default function Home() {
                       <span className="font-semibold">{ticket.folio}</span>
                       <span className="font-semibold">{formatCurrency(ticket.totals.total)}</span>
                     </span>
-                    <span className="mt-1 block text-sm text-stone-500">
+                    <span className="mt-1 block text-sm text-slate-500">
                       {ticket.table} · {ticket.payment} · {ticket.createdAt}
                     </span>
                   </button>
@@ -370,46 +401,7 @@ export default function Home() {
             </div>
           </section>
 
-          {selectedTicket ? (
-            <section className="ticket-print mt-5 rounded-lg border border-stone-300 bg-[#fffdf7] p-4 font-mono text-sm">
-              <div className="text-center">
-                <p className="text-base font-bold">MESA CLARA POS</p>
-                <p>Restaurante / Cafeteria</p>
-                <p>RFC: XAXX010101000</p>
-              </div>
-              <div className="my-3 border-y border-dashed border-stone-400 py-2">
-                <Row label="Ticket" value={selectedTicket.folio} />
-                <Row label="Mesa" value={selectedTicket.table} />
-                <Row label="Cajero" value={selectedTicket.cashier} />
-                <Row label="Fecha" value={selectedTicket.createdAt} />
-              </div>
-              <div className="space-y-2">
-                {selectedTicket.items.map((item) => (
-                  <div key={`${selectedTicket.folio}-${item.id}`}>
-                    <div className="flex justify-between gap-3">
-                      <span>
-                        {item.qty} x {item.name}
-                      </span>
-                      <span>{formatCurrency(item.price * item.qty)}</span>
-                    </div>
-                    {item.note ? <p className="text-xs text-stone-500">Nota: {item.note}</p> : null}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 border-t border-dashed border-stone-400 pt-2">
-                <Row label="Subtotal" value={formatCurrency(selectedTicket.totals.subtotal)} />
-                <Row label="Descuento" value={`-${formatCurrency(selectedTicket.totals.discountAmount)}`} />
-                <Row label="IVA" value={formatCurrency(selectedTicket.totals.tax)} />
-                <Row label="Propina" value={formatCurrency(selectedTicket.totals.tipAmount)} />
-                <div className="mt-2 flex justify-between text-base font-bold">
-                  <span>Total</span>
-                  <span>{formatCurrency(selectedTicket.totals.total)}</span>
-                </div>
-                <Row label="Pago" value={selectedTicket.payment} />
-              </div>
-              <p className="mt-4 text-center text-xs">Gracias por su compra</p>
-            </section>
-          ) : null}
+          {selectedTicket ? <TicketPreview ticket={selectedTicket} /> : null}
         </aside>
       </div>
     </main>
@@ -418,19 +410,32 @@ export default function Home() {
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="text-sm text-stone-500">{label}</p>
-      <p className="mt-1 truncate text-2xl font-semibold">{value}</p>
-      <p className="mt-1 text-xs text-stone-500">{detail}</p>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase text-slate-400">{label}</p>
+      <p className="mt-2 truncate text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{detail}</p>
     </div>
+  );
+}
+
+function StationBadge({ station }: { station: Product["station"] }) {
+  const isBar = station === "Barra";
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+        isBar ? "bg-[#edf7f4] text-[#17443d]" : "bg-[#fff3df] text-[#9a5d12]"
+      }`}
+    >
+      {station}
+    </span>
   );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between text-stone-600">
+    <div className="flex items-center justify-between gap-4 text-slate-500">
       <span>{label}</span>
-      <span className="font-medium text-stone-950">{value}</span>
+      <span className="text-right font-medium text-slate-950">{value}</span>
     </div>
   );
 }
@@ -451,14 +456,14 @@ function Control({
   return (
     <label className="block">
       <span className="mb-2 flex items-center justify-between text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="text-stone-500">
+        <span className="font-semibold text-slate-700">{label}</span>
+        <span className="font-semibold text-slate-500">
           {value}
           {suffix}
         </span>
       </span>
       <input
-        className="w-full accent-emerald-900"
+        className="w-full accent-[#17443d]"
         max={max}
         min={0}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -466,5 +471,48 @@ function Control({
         value={value}
       />
     </label>
+  );
+}
+
+function TicketPreview({ ticket }: { ticket: Ticket }) {
+  return (
+    <section className="ticket-print mt-5 rounded-xl border border-slate-300 bg-[#fffdf7] p-4 font-mono text-sm shadow-sm">
+      <div className="text-center">
+        <p className="text-base font-bold">MESA CLARA POS</p>
+        <p>Restaurante / Cafeteria</p>
+        <p>RFC: XAXX010101000</p>
+      </div>
+      <div className="my-3 border-y border-dashed border-slate-400 py-2">
+        <Row label="Ticket" value={ticket.folio} />
+        <Row label="Mesa" value={ticket.table} />
+        <Row label="Cajero" value={ticket.cashier} />
+        <Row label="Fecha" value={ticket.createdAt} />
+      </div>
+      <div className="space-y-2">
+        {ticket.items.map((item) => (
+          <div key={`${ticket.folio}-${item.id}`}>
+            <div className="flex justify-between gap-3">
+              <span>
+                {item.qty} x {item.name}
+              </span>
+              <span>{formatCurrency(item.price * item.qty)}</span>
+            </div>
+            {item.note ? <p className="text-xs text-slate-500">Nota: {item.note}</p> : null}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 border-t border-dashed border-slate-400 pt-2">
+        <Row label="Subtotal" value={formatCurrency(ticket.totals.subtotal)} />
+        <Row label="Descuento" value={`-${formatCurrency(ticket.totals.discountAmount)}`} />
+        <Row label="IVA" value={formatCurrency(ticket.totals.tax)} />
+        <Row label="Propina" value={formatCurrency(ticket.totals.tipAmount)} />
+        <div className="mt-2 flex justify-between text-base font-bold">
+          <span>Total</span>
+          <span>{formatCurrency(ticket.totals.total)}</span>
+        </div>
+        <Row label="Pago" value={ticket.payment} />
+      </div>
+      <p className="mt-4 text-center text-xs">Gracias por su compra</p>
+    </section>
   );
 }
