@@ -3,11 +3,20 @@ import {
   createCashMovementsShiftIndex,
   createCashMovementsTable,
   createCashShiftsTable,
+  createKitchenCommandItemsCommandIndex,
+  createKitchenCommandItemsTable,
+  createKitchenCommandsStationIndex,
+  createKitchenCommandsTable,
+  createOpenOrderItemsOrderIndex,
+  createOpenOrderItemsTable,
+  createOpenOrdersStatusIndex,
+  createOpenOrdersTable,
   createOpenCashShiftIndex,
   createProductsTable,
   createTicketCreatedIndex,
   createTicketItemsTable,
   createTicketItemsTicketIndex,
+  createTicketsStatusIndex,
   createTicketsTable,
   createTicketsShiftIndex,
   initialProducts,
@@ -57,6 +66,8 @@ export type TicketRecord = {
   cashier: string;
   payment: string;
   createdAt: string;
+  status: "paid" | "cancelled";
+  cancelReason?: string | null;
   items: TicketItemInput[];
   totals: TicketInput["totals"];
 };
@@ -98,6 +109,23 @@ export type CashRegisterRecord = {
   };
 };
 
+export type OpenOrderRecord = {
+  table: string;
+  cashier: string;
+  openedAt: string;
+  updatedAt: string;
+  items: TicketItemInput[];
+};
+
+export type KitchenCommandRecord = {
+  id: number;
+  table: string;
+  station: "Barra" | "Cocina";
+  status: "pending" | "ready" | "cancelled";
+  createdAt: string;
+  items: TicketItemInput[];
+};
+
 type DbEnv = {
   DB?: D1Database;
 };
@@ -115,17 +143,26 @@ export async function ensureSchema() {
   await db.batch([
     db.prepare(createCashShiftsTable),
     db.prepare(createCashMovementsTable),
+    db.prepare(createOpenOrdersTable),
+    db.prepare(createOpenOrderItemsTable),
+    db.prepare(createKitchenCommandsTable),
+    db.prepare(createKitchenCommandItemsTable),
     db.prepare(createProductsTable),
     db.prepare(createTicketsTable),
     db.prepare(createTicketItemsTable),
     db.prepare(createOpenCashShiftIndex),
     db.prepare(createCashMovementsShiftIndex),
+    db.prepare(createOpenOrdersStatusIndex),
+    db.prepare(createOpenOrderItemsOrderIndex),
+    db.prepare(createKitchenCommandsStationIndex),
+    db.prepare(createKitchenCommandItemsCommandIndex),
     db.prepare(createTicketCreatedIndex),
     db.prepare(createTicketItemsTicketIndex),
   ]);
 
-  await ensureTicketShiftColumn(db);
+  await ensureTicketColumns(db);
   await db.prepare(createTicketsShiftIndex).run();
+  await db.prepare(createTicketsStatusIndex).run();
 
   const productCount = await db.prepare("SELECT COUNT(*) AS count FROM products").first<{ count: number }>();
   if ((productCount?.count ?? 0) === 0) {
@@ -139,11 +176,23 @@ export async function ensureSchema() {
   }
 }
 
-async function ensureTicketShiftColumn(db: D1Database) {
+async function ensureTicketColumns(db: D1Database) {
   const columns = await db.prepare("PRAGMA table_info(tickets)").all<{ name: string }>();
-  const hasShiftId = (columns.results ?? []).some((column) => column.name === "shift_id");
-  if (!hasShiftId) {
+  const columnNames = new Set((columns.results ?? []).map((column) => column.name));
+  if (!columnNames.has("shift_id")) {
     await db.prepare("ALTER TABLE tickets ADD COLUMN shift_id INTEGER").run();
+  }
+  if (!columnNames.has("status")) {
+    await db.prepare("ALTER TABLE tickets ADD COLUMN status TEXT NOT NULL DEFAULT 'paid'").run();
+  }
+  if (!columnNames.has("cancelled_at")) {
+    await db.prepare("ALTER TABLE tickets ADD COLUMN cancelled_at TEXT").run();
+  }
+  if (!columnNames.has("cancel_reason")) {
+    await db.prepare("ALTER TABLE tickets ADD COLUMN cancel_reason TEXT").run();
+  }
+  if (!columnNames.has("cancelled_by")) {
+    await db.prepare("ALTER TABLE tickets ADD COLUMN cancelled_by TEXT").run();
   }
 }
 
@@ -236,6 +285,8 @@ export async function listTickets() {
         cashier,
         payment,
         created_at AS createdAt,
+        status,
+        cancel_reason AS cancelReason,
         subtotal,
         discount_amount AS discountAmount,
         tax,
@@ -253,6 +304,8 @@ export async function listTickets() {
         cashier: string;
         payment: string;
         createdAt: string;
+        status: "paid" | "cancelled";
+        cancelReason: string | null;
       } & TicketInput["totals"]
     >();
 
@@ -288,6 +341,8 @@ export async function listTickets() {
     cashier: ticket.cashier,
     payment: ticket.payment,
     createdAt: ticket.createdAt,
+    status: ticket.status,
+    cancelReason: ticket.cancelReason,
     totals: {
       subtotal: ticket.subtotal,
       discountAmount: ticket.discountAmount,
@@ -361,14 +416,264 @@ export async function createTicket(input: TicketInput) {
     ),
   );
 
+  await clearOpenOrder(input.table);
+
   return {
     folio,
     table: input.table,
     cashier: input.cashier,
     payment: input.payment,
     createdAt: created.createdAt,
+    status: "paid",
+    cancelReason: null,
     items: input.items,
     totals: input.totals,
+  };
+}
+
+export async function cancelTicket(input: { folio: string; reason: string; cancelledBy: string }) {
+  await ensureSchema();
+  const db = getDb();
+  const reason = input.reason.trim();
+  if (!reason) throw new Error("El motivo de cancelacion es obligatorio.");
+
+  await db
+    .prepare(
+      `UPDATE tickets
+      SET status = 'cancelled',
+        cancelled_at = CURRENT_TIMESTAMP,
+        cancel_reason = ?,
+        cancelled_by = ?
+      WHERE folio = ? AND status = 'paid'`,
+    )
+    .bind(reason, input.cancelledBy.trim() || "Ana Lopez", input.folio)
+    .run();
+
+  return listTickets();
+}
+
+export async function listOpenOrders() {
+  await ensureSchema();
+  const db = getDb();
+  const ordersResult = await db
+    .prepare(
+      `SELECT id, table_name AS "table", cashier, opened_at AS openedAt, updated_at AS updatedAt
+      FROM open_orders
+      WHERE status = 'open'
+      ORDER BY id`,
+    )
+    .all<{ id: number; table: string; cashier: string; openedAt: string; updatedAt: string }>();
+  const orders = ordersResult.results ?? [];
+  if (orders.length === 0) return [];
+
+  const orderIds = orders.map((order) => order.id);
+  const placeholders = orderIds.map(() => "?").join(", ");
+  const itemsResult = await db
+    .prepare(
+      `SELECT
+        order_id AS orderId,
+        product_id AS id,
+        name,
+        category,
+        qty,
+        unit_price AS price,
+        station,
+        note,
+        NULL AS tag
+      FROM open_order_items
+      WHERE order_id IN (${placeholders})
+      ORDER BY id`,
+    )
+    .bind(...orderIds)
+    .all<TicketItemInput & { orderId: number }>();
+  const items = itemsResult.results ?? [];
+
+  return orders.map((order) => ({
+    table: order.table,
+    cashier: order.cashier,
+    openedAt: order.openedAt,
+    updatedAt: order.updatedAt,
+    items: items.filter((item) => item.orderId === order.id),
+  }));
+}
+
+export async function saveOpenOrder(input: { table: string; cashier: string; items: TicketItemInput[] }) {
+  await ensureSchema();
+  const db = getDb();
+  const table = input.table.trim();
+  if (!table) throw new Error("La mesa es obligatoria.");
+
+  await db
+    .prepare(
+      `INSERT INTO open_orders (table_name, cashier, status, updated_at)
+      VALUES (?, ?, 'open', CURRENT_TIMESTAMP)
+      ON CONFLICT(table_name) DO UPDATE SET
+        cashier = excluded.cashier,
+        status = 'open',
+        updated_at = CURRENT_TIMESTAMP`,
+    )
+    .bind(table, input.cashier.trim() || "Ana Lopez")
+    .run();
+
+  const order = await db.prepare("SELECT id FROM open_orders WHERE table_name = ?").bind(table).first<{ id: number }>();
+  if (!order) throw new Error("No se pudo guardar la cuenta.");
+
+  await db.prepare("DELETE FROM open_order_items WHERE order_id = ?").bind(order.id).run();
+  if (input.items.length > 0) {
+    await db.batch(
+      input.items.map((item) =>
+        db
+          .prepare(
+            `INSERT INTO open_order_items (order_id, product_id, name, category, qty, unit_price, station, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(order.id, item.id, item.name, item.category || "", item.qty, item.price, item.station, item.note ?? null),
+      ),
+    );
+  }
+
+  return listOpenOrders();
+}
+
+export async function clearOpenOrder(tableName: string) {
+  await ensureSchema();
+  const db = getDb();
+  await db.prepare("UPDATE open_orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE table_name = ? AND status = 'open'").bind(tableName).run();
+  return listOpenOrders();
+}
+
+export async function listKitchenCommands() {
+  await ensureSchema();
+  const db = getDb();
+  const commandsResult = await db
+    .prepare(
+      `SELECT id, table_name AS "table", station, status, created_at AS createdAt
+      FROM kitchen_commands
+      WHERE status = 'pending'
+      ORDER BY id DESC
+      LIMIT 30`,
+    )
+    .all<{ id: number; table: string; station: "Barra" | "Cocina"; status: "pending" | "ready" | "cancelled"; createdAt: string }>();
+  const commands = commandsResult.results ?? [];
+  if (commands.length === 0) return [];
+
+  const commandIds = commands.map((command) => command.id);
+  const placeholders = commandIds.map(() => "?").join(", ");
+  const itemsResult = await db
+    .prepare(
+      `SELECT
+        command_id AS commandId,
+        product_id AS id,
+        name,
+        qty,
+        unit_price AS price,
+        note,
+        '' AS category,
+        'Barra' AS station,
+        NULL AS tag
+      FROM kitchen_command_items
+      WHERE command_id IN (${placeholders})
+      ORDER BY id`,
+    )
+    .bind(...commandIds)
+    .all<TicketItemInput & { commandId: number }>();
+  const items = itemsResult.results ?? [];
+
+  return commands.map((command) => ({
+    ...command,
+    items: items.filter((item) => item.commandId === command.id).map((item) => ({ ...item, station: command.station })),
+  }));
+}
+
+export async function createKitchenCommands(input: { table: string; items: TicketItemInput[] }) {
+  await ensureSchema();
+  const db = getDb();
+  const stations = Array.from(new Set(input.items.map((item) => item.station))) as Array<"Barra" | "Cocina">;
+
+  for (const station of stations) {
+    const stationItems = input.items.filter((item) => item.station === station);
+    const command = await db
+      .prepare(
+        `INSERT INTO kitchen_commands (table_name, station)
+        VALUES (?, ?)
+        RETURNING id`,
+      )
+      .bind(input.table, station)
+      .first<{ id: number }>();
+    if (!command) throw new Error("No se pudo crear la comanda.");
+    await db.batch(
+      stationItems.map((item) =>
+        db
+          .prepare(
+            `INSERT INTO kitchen_command_items (command_id, product_id, name, qty, unit_price, note)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(command.id, item.id, item.name, item.qty, item.price, item.note ?? null),
+      ),
+    );
+  }
+
+  return listKitchenCommands();
+}
+
+export async function markKitchenCommandReady(id: number) {
+  await ensureSchema();
+  const db = getDb();
+  await db.prepare("UPDATE kitchen_commands SET status = 'ready' WHERE id = ?").bind(id).run();
+  return listKitchenCommands();
+}
+
+export async function getReports() {
+  await ensureSchema();
+  const db = getDb();
+  const totals = await db
+    .prepare(
+      `SELECT
+        COUNT(*) AS ticketCount,
+        COALESCE(SUM(total), 0) AS totalSales,
+        COALESCE(SUM(subtotal), 0) AS subtotal,
+        COALESCE(SUM(tax), 0) AS tax,
+        COALESCE(SUM(tip_amount), 0) AS tips
+      FROM tickets
+      WHERE status = 'paid'`,
+    )
+    .first<{ ticketCount: number; totalSales: number; subtotal: number; tax: number; tips: number }>();
+  const cancelled = await db.prepare("SELECT COUNT(*) AS count FROM tickets WHERE status = 'cancelled'").first<{ count: number }>();
+  const payments = await db
+    .prepare(
+      `SELECT payment, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+      FROM tickets
+      WHERE status = 'paid'
+      GROUP BY payment
+      ORDER BY total DESC`,
+    )
+    .all<{ payment: string; count: number; total: number }>();
+  const products = await db
+    .prepare(
+      `SELECT
+        ti.name,
+        SUM(ti.qty) AS qty,
+        SUM(ti.qty * ti.unit_price) AS total
+      FROM ticket_items ti
+      JOIN tickets t ON t.id = ti.ticket_id
+      WHERE t.status = 'paid'
+      GROUP BY ti.name
+      ORDER BY qty DESC
+      LIMIT 8`,
+    )
+    .all<{ name: string; qty: number; total: number }>();
+
+  return {
+    totals: {
+      ticketCount: totals?.ticketCount ?? 0,
+      totalSales: totals?.totalSales ?? 0,
+      subtotal: totals?.subtotal ?? 0,
+      tax: totals?.tax ?? 0,
+      tips: totals?.tips ?? 0,
+      cancelledTickets: cancelled?.count ?? 0,
+    },
+    payments: payments.results ?? [],
+    products: products.results ?? [],
   };
 }
 
@@ -426,7 +731,7 @@ async function buildCashRegister(db: D1Database, shift: CashShiftRecord | null):
         COUNT(*) AS count,
         COALESCE(SUM(total), 0) AS total
       FROM tickets
-      WHERE shift_id = ?
+      WHERE shift_id = ? AND status = 'paid'
       GROUP BY payment`,
     )
     .bind(shift.id)

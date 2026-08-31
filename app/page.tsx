@@ -25,6 +25,8 @@ type Ticket = {
   cashier: string;
   payment: string;
   createdAt: string;
+  status: "paid" | "cancelled";
+  cancelReason?: string | null;
   items: CartItem[];
   totals: TicketTotals;
 };
@@ -77,11 +79,24 @@ type CashDraft = {
   notes: string;
 };
 type SentCommand = {
-  id: string;
+  id: number;
   table: string;
   station: "Barra" | "Cocina";
+  status: "pending" | "ready" | "cancelled";
   createdAt: string;
   items: CartItem[];
+};
+type Reports = {
+  totals: {
+    ticketCount: number;
+    totalSales: number;
+    subtotal: number;
+    tax: number;
+    tips: number;
+    cancelledTickets: number;
+  };
+  payments: Array<{ payment: string; count: number; total: number }>;
+  products: Array<{ name: string; qty: number; total: number }>;
 };
 
 const defaultProducts: Product[] = [
@@ -100,12 +115,7 @@ const defaultProducts: Product[] = [
 ];
 
 const tables = ["Mostrador", "Mesa 1", "Mesa 2", "Mesa 3", "Terraza"];
-const seededCarts: Record<string, CartItem[]> = {
-  Mostrador: [
-    { ...defaultProducts[1], qty: 1 },
-    { ...defaultProducts[7], qty: 1, note: "Sin crema" },
-  ],
-};
+const seededCarts: Record<string, CartItem[]> = {};
 const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia"];
 const navItems = ["Venta", "Caja", "Mesas", "Barra", "Cocina", "Productos", "Tickets", "Reportes"];
 const emptyProductDraft: ProductDraft = { name: "", category: "Cafe", price: "", station: "Barra", tag: "" };
@@ -128,6 +138,7 @@ export default function Home() {
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCashDraft);
   const [sentCommands, setSentCommands] = useState<SentCommand[]>([]);
+  const [reports, setReports] = useState<Reports | null>(null);
   const [isSavingTicket, setIsSavingTicket] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isSavingCash, setIsSavingCash] = useState(false);
@@ -156,8 +167,29 @@ export default function Home() {
     setCashDraft((draft) => ({ ...draft, closingCash: payload.register.summary.expectedCash ? String(payload.register.summary.expectedCash) : draft.closingCash }));
   };
 
+  const loadOpenOrders = async () => {
+    const response = await fetch("/api/orders");
+    if (!response.ok) throw new Error("No se pudieron cargar las cuentas.");
+    const payload = (await response.json()) as { orders: Array<{ table: string; items: CartItem[] }> };
+    setCartsByTable(Object.fromEntries(payload.orders.map((order) => [order.table, order.items])));
+  };
+
+  const loadCommands = async () => {
+    const response = await fetch("/api/commands");
+    if (!response.ok) throw new Error("No se pudieron cargar las comandas.");
+    const payload = (await response.json()) as { commands: SentCommand[] };
+    setSentCommands(payload.commands);
+  };
+
+  const loadReports = async () => {
+    const response = await fetch("/api/reports");
+    if (!response.ok) throw new Error("No se pudieron cargar los reportes.");
+    const payload = (await response.json()) as { reports: Reports };
+    setReports(payload.reports);
+  };
+
   useEffect(() => {
-    Promise.all([loadProducts(), loadTickets(), loadCashRegister()])
+    Promise.all([loadProducts(), loadTickets(), loadCashRegister(), loadOpenOrders(), loadCommands(), loadReports()])
       .then(() => setStatusMessage("Datos sincronizados"))
       .catch(() => setStatusMessage("Trabajando con datos locales"));
   }, []);
@@ -181,6 +213,24 @@ export default function Home() {
     return { subtotal, discountAmount, tax, tipAmount, total: base + tax + tipAmount };
   }, [cart, discount, tip]);
 
+  const persistOpenOrder = async (table: string, items: CartItem[]) => {
+    const response = await fetch("/api/orders", {
+      body: JSON.stringify({ cashier: "Ana Lopez", items, table }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("No se pudo guardar la cuenta.");
+  };
+
+  const removeOpenOrder = async (table: string) => {
+    const response = await fetch("/api/orders", {
+      body: JSON.stringify({ table }),
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("No se pudo cerrar la cuenta.");
+  };
+
   const addProduct = (product: Product) => {
     setCartsByTable((current) => {
       const items = current[activeTable] ?? [];
@@ -188,6 +238,7 @@ export default function Home() {
       const nextItems = match
         ? items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item))
         : [...items, { ...product, qty: 1 }];
+      void persistOpenOrder(activeTable, nextItems).catch(() => setStatusMessage("Cuenta pendiente de sincronizar"));
       return { ...current, [activeTable]: nextItems };
     });
   };
@@ -198,12 +249,18 @@ export default function Home() {
       const nextItems = items
         .map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
         .filter((item) => item.qty > 0);
+      if (nextItems.length > 0) {
+        void persistOpenOrder(activeTable, nextItems).catch(() => setStatusMessage("Cuenta pendiente de sincronizar"));
+      } else {
+        void removeOpenOrder(activeTable).catch(() => setStatusMessage("Cuenta pendiente de sincronizar"));
+      }
       return { ...current, [activeTable]: nextItems };
     });
   };
 
   const clearSale = () => {
     setCartsByTable((current) => ({ ...current, [activeTable]: [] }));
+    void removeOpenOrder(activeTable).catch(() => setStatusMessage("Cuenta pendiente de sincronizar"));
     setDiscount(0);
     setTip(10);
   };
@@ -233,10 +290,12 @@ export default function Home() {
       setTickets((currentTickets) => [payload.ticket, ...currentTickets]);
       setSelectedTicket(payload.ticket);
       await loadCashRegister();
+      await loadOpenOrders();
+      await loadReports();
       clearSale();
       setStatusMessage(`${payload.ticket.folio} guardado`);
     } catch {
-      const fallbackTicket: Ticket = { folio: `LOCAL-${Date.now().toString().slice(-6)}`, ...ticketPayload };
+      const fallbackTicket: Ticket = { folio: `LOCAL-${Date.now().toString().slice(-6)}`, status: "paid", cancelReason: null, ...ticketPayload };
       setTickets((currentTickets) => [fallbackTicket, ...currentTickets]);
       setSelectedTicket(fallbackTicket);
       clearSale();
@@ -319,19 +378,58 @@ export default function Home() {
   const sendCommand = (station?: "Barra" | "Cocina") => {
     if (cart.length === 0) return;
     const stations = station ? [station] : (["Barra", "Cocina"] as const);
-    const nextCommands = stations
-      .map((targetStation) => ({
-        id: `${activeTable}-${targetStation}-${Date.now()}`,
-        table: activeTable,
-        station: targetStation,
-        createdAt: new Date().toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
-        items: cart.filter((item) => item.station === targetStation),
-      }))
-      .filter((command) => command.items.length > 0);
+    const commandItems = cart.filter((item) => stations.includes(item.station));
 
-    if (nextCommands.length === 0) return;
-    setSentCommands((current) => [...nextCommands, ...current].slice(0, 12));
-    setStatusMessage(`Comanda enviada: ${nextCommands.map((command) => command.station).join(" / ")}`);
+    if (commandItems.length === 0) return;
+    fetch("/api/commands", {
+      body: JSON.stringify({ items: commandItems, table: activeTable }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("No se pudo enviar la comanda.");
+        return response.json() as Promise<{ commands: SentCommand[] }>;
+      })
+      .then((payload) => {
+        setSentCommands(payload.commands);
+        setStatusMessage(`Comanda enviada: ${stations.join(" / ")}`);
+      })
+      .catch(() => setStatusMessage("No se pudo enviar la comanda"));
+  };
+
+  const markCommandReady = async (id: number) => {
+    try {
+      const response = await fetch("/api/commands", {
+        body: JSON.stringify({ action: "ready", id }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("No se pudo marcar la comanda.");
+      const payload = (await response.json()) as { commands: SentCommand[] };
+      setSentCommands(payload.commands);
+      setStatusMessage("Comanda marcada como lista");
+    } catch {
+      setStatusMessage("No se pudo actualizar la comanda");
+    }
+  };
+
+  const cancelTicketByFolio = async (folio: string, reason: string) => {
+    try {
+      const response = await fetch("/api/tickets", {
+        body: JSON.stringify({ cancelledBy: "Ana Lopez", folio, reason }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      if (!response.ok) throw new Error("No se pudo cancelar el ticket.");
+      const payload = (await response.json()) as { tickets: Ticket[] };
+      setTickets(payload.tickets);
+      setSelectedTicket(payload.tickets[0] ?? null);
+      await loadCashRegister();
+      await loadReports();
+      setStatusMessage(`${folio} cancelado`);
+    } catch {
+      setStatusMessage("No se pudo cancelar el ticket");
+    }
   };
 
   const submitCashAction = async (action: "open" | "movement" | "close") => {
@@ -442,9 +540,13 @@ export default function Home() {
               cartsByTable={cartsByTable}
             />
           ) : activeView === "Barra" ? (
-            <StationPanel commands={sentCommands} station="Barra" />
+            <StationPanel commands={sentCommands} onReady={markCommandReady} station="Barra" />
           ) : activeView === "Cocina" ? (
-            <StationPanel commands={sentCommands} station="Cocina" />
+            <StationPanel commands={sentCommands} onReady={markCommandReady} station="Cocina" />
+          ) : activeView === "Tickets" ? (
+            <TicketsPanel onCancel={cancelTicketByFolio} onSelectTicket={setSelectedTicket} selectedTicket={selectedTicket} tickets={tickets} />
+          ) : activeView === "Reportes" ? (
+            <ReportsPanel reports={reports} tickets={tickets} />
           ) : (
             <SaleCatalog activeCategory={activeCategory} categories={categories} onAdd={addProduct} onCategory={setActiveCategory} products={visibleProducts} />
           )}
@@ -941,7 +1043,7 @@ function TablesPanel({
   );
 }
 
-function StationPanel({ commands, station }: { commands: SentCommand[]; station: "Barra" | "Cocina" }) {
+function StationPanel({ commands, onReady, station }: { commands: SentCommand[]; onReady: (id: number) => void; station: "Barra" | "Cocina" }) {
   const stationCommands = commands.filter((command) => command.station === station);
 
   return (
@@ -975,11 +1077,166 @@ function StationPanel({ commands, station }: { commands: SentCommand[]; station:
                   </div>
                 ))}
               </div>
+              <button className="mt-5 w-full rounded-lg bg-[#17443d] px-3 py-3 text-sm font-semibold text-white hover:bg-[#123730]" onClick={() => onReady(command.id)}>
+                Marcar lista
+              </button>
             </article>
           ))
         )}
       </div>
     </section>
+  );
+}
+
+function TicketsPanel({
+  onCancel,
+  onSelectTicket,
+  selectedTicket,
+  tickets,
+}: {
+  onCancel: (folio: string, reason: string) => void;
+  onSelectTicket: (ticket: Ticket) => void;
+  selectedTicket: Ticket | null;
+  tickets: Ticket[];
+}) {
+  const [reason, setReason] = useState("Error de captura");
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] gap-4 max-xl:grid-cols-1">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Auditoria</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Tickets emitidos</h2>
+          <p className="mt-1 text-sm text-slate-500">{tickets.length} tickets recientes con estado y detalle.</p>
+        </div>
+        <div className="max-h-[620px] overflow-y-auto">
+          {tickets.length === 0 ? (
+            <div className="m-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">Todavia no hay tickets.</div>
+          ) : (
+            tickets.map((ticket) => (
+              <button
+                className={`grid w-full grid-cols-[150px_minmax(0,1fr)_130px_120px] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition hover:bg-slate-50 max-lg:grid-cols-1 ${
+                  selectedTicket?.folio === ticket.folio ? "bg-[#edf7f4]" : "bg-white"
+                }`}
+                key={ticket.folio}
+                onClick={() => onSelectTicket(ticket)}
+              >
+                <span>
+                  <span className="block font-semibold">{ticket.folio}</span>
+                  <span className="mt-1 block text-sm text-slate-500">{ticket.createdAt}</span>
+                </span>
+                <span>
+                  <span className="block font-semibold">{ticket.table}</span>
+                  <span className="mt-1 block text-sm text-slate-500">{ticket.cashier} · {ticket.payment}</span>
+                </span>
+                <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${ticket.status === "cancelled" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
+                  {ticket.status === "cancelled" ? "Cancelado" : "Pagado"}
+                </span>
+                <span className="text-right text-lg font-semibold max-lg:text-left">{money(ticket.totals.total)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Ticket seleccionado</p>
+          {selectedTicket ? (
+            <>
+              <div className="mt-4 rounded-lg bg-slate-50 p-4">
+                <Row label="Folio" value={selectedTicket.folio} />
+                <Row label="Total" value={money(selectedTicket.totals.total)} />
+                <Row label="Estado" value={selectedTicket.status === "cancelled" ? "Cancelado" : "Pagado"} />
+              </div>
+              {selectedTicket.status === "cancelled" ? (
+                <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">{selectedTicket.cancelReason ?? "Sin motivo registrado"}</p>
+              ) : (
+                <>
+                  <TextField label="Motivo de cancelacion" onChange={setReason} placeholder="Motivo obligatorio" value={reason} />
+                  <button className="mt-4 w-full rounded-lg bg-[#c64d36] px-4 py-3 text-sm font-semibold text-white" onClick={() => onCancel(selectedTicket.folio, reason)}>
+                    Cancelar ticket
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Selecciona un ticket para verlo.</p>
+          )}
+        </section>
+        {selectedTicket ? <TicketPreview ticket={selectedTicket} /> : null}
+      </aside>
+    </div>
+  );
+}
+
+function ReportsPanel({ reports, tickets }: { reports: Reports | null; tickets: Ticket[] }) {
+  const totals = reports?.totals ?? { cancelledTickets: 0, subtotal: 0, tax: 0, ticketCount: 0, tips: 0, totalSales: 0 };
+  const averageTicket = totals.ticketCount > 0 ? totals.totalSales / totals.ticketCount : 0;
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] gap-4 max-xl:grid-cols-1">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <p className="text-xs font-semibold uppercase text-[#b64833]">Direccion</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Reportes de venta</h2>
+          <p className="mt-1 text-sm text-slate-500">Resumen operativo con tickets pagados y productos vendidos.</p>
+        </div>
+        <div className="grid grid-cols-4 gap-3 p-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
+          <Metric label="Venta neta" value={money(totals.totalSales)} detail={`${totals.ticketCount} tickets pagados`} />
+          <Metric label="Ticket promedio" value={money(averageTicket)} detail="promedio por venta" />
+          <Metric label="IVA" value={money(totals.tax)} detail="impuesto acumulado" />
+          <Metric label="Cancelados" value={`${totals.cancelledTickets}`} detail="tickets anulados" />
+        </div>
+        <div className="grid grid-cols-2 gap-4 px-5 pb-5 max-lg:grid-cols-1">
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="font-semibold">Ventas por pago</h3>
+            <div className="mt-4 space-y-3">
+              {(reports?.payments ?? []).length === 0 ? (
+                <p className="text-sm text-slate-500">Sin ventas registradas.</p>
+              ) : (
+                reports?.payments.map((payment) => (
+                  <div className="flex items-center justify-between gap-3" key={payment.payment}>
+                    <span className="text-sm font-medium text-slate-600">{payment.payment} · {payment.count}</span>
+                    <span className="font-semibold">{money(payment.total)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="font-semibold">Productos mas vendidos</h3>
+            <div className="mt-4 space-y-3">
+              {(reports?.products ?? []).length === 0 ? (
+                <p className="text-sm text-slate-500">Sin productos vendidos.</p>
+              ) : (
+                reports?.products.map((product) => (
+                  <div className="flex items-center justify-between gap-3" key={product.name}>
+                    <span className="text-sm font-medium text-slate-600">{product.name} · {product.qty}</span>
+                    <span className="font-semibold">{money(product.total)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="font-semibold">Ultimos movimientos</h3>
+        <div className="mt-4 space-y-3">
+          {tickets.slice(0, 6).map((ticket) => (
+            <div className="rounded-lg border border-slate-200 p-3" key={ticket.folio}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold">{ticket.folio}</p>
+                <p className="font-semibold">{money(ticket.totals.total)}</p>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">{ticket.table} · {ticket.status === "cancelled" ? "Cancelado" : ticket.payment}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+    </div>
   );
 }
 

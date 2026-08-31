@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   payment TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   shift_id INTEGER,
+  status TEXT NOT NULL CHECK (status IN ('paid', 'cancelled')) DEFAULT 'paid',
+  cancelled_at TEXT,
+  cancel_reason TEXT,
+  cancelled_by TEXT,
   subtotal INTEGER NOT NULL,
   discount_amount INTEGER NOT NULL,
   tax INTEGER NOT NULL,
@@ -85,6 +89,71 @@ ON cash_movements(shift_id)`;
 export const createTicketsShiftIndex = `
 CREATE INDEX IF NOT EXISTS idx_tickets_shift_id
 ON tickets(shift_id)`;
+
+export const createTicketsStatusIndex = `
+CREATE INDEX IF NOT EXISTS idx_tickets_status
+ON tickets(status)`;
+
+export const createOpenOrdersTable = `
+CREATE TABLE IF NOT EXISTS open_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_name TEXT NOT NULL UNIQUE,
+  cashier TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'paid', 'cancelled')) DEFAULT 'open',
+  opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createOpenOrderItemsTable = `
+CREATE TABLE IF NOT EXISTS open_order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  product_id INTEGER,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  unit_price INTEGER NOT NULL,
+  station TEXT NOT NULL,
+  note TEXT,
+  FOREIGN KEY (order_id) REFERENCES open_orders(id) ON DELETE CASCADE
+)`;
+
+export const createKitchenCommandsTable = `
+CREATE TABLE IF NOT EXISTS kitchen_commands (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_name TEXT NOT NULL,
+  station TEXT NOT NULL CHECK (station IN ('Barra', 'Cocina')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'cancelled')) DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createKitchenCommandItemsTable = `
+CREATE TABLE IF NOT EXISTS kitchen_command_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  command_id INTEGER NOT NULL,
+  product_id INTEGER,
+  name TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  unit_price INTEGER NOT NULL,
+  note TEXT,
+  FOREIGN KEY (command_id) REFERENCES kitchen_commands(id) ON DELETE CASCADE
+)`;
+
+export const createOpenOrdersStatusIndex = `
+CREATE INDEX IF NOT EXISTS idx_open_orders_status
+ON open_orders(status)`;
+
+export const createOpenOrderItemsOrderIndex = `
+CREATE INDEX IF NOT EXISTS idx_open_order_items_order_id
+ON open_order_items(order_id)`;
+
+export const createKitchenCommandsStationIndex = `
+CREATE INDEX IF NOT EXISTS idx_kitchen_commands_station_status
+ON kitchen_commands(station, status)`;
+
+export const createKitchenCommandItemsCommandIndex = `
+CREATE INDEX IF NOT EXISTS idx_kitchen_command_items_command_id
+ON kitchen_command_items(command_id)`;
 
 export const initialProducts = [
   { name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
