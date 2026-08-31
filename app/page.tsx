@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Product = {
   id: number;
@@ -8,7 +8,7 @@ type Product = {
   category: string;
   price: number;
   station: "Barra" | "Cocina";
-  tag?: string;
+  tag?: string | null;
 };
 
 type CartItem = Product & {
@@ -34,7 +34,7 @@ type Ticket = {
   totals: TicketTotals;
 };
 
-const products: Product[] = [
+const defaultProducts: Product[] = [
   { id: 1, name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
   { id: 2, name: "Latte", category: "Cafe", price: 58, station: "Barra", tag: "Popular" },
   { id: 3, name: "Capuchino", category: "Cafe", price: 56, station: "Barra" },
@@ -55,18 +55,50 @@ const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
 
 export default function Home() {
-  const categories = ["Todo", ...Array.from(new Set(products.map((product) => product.category)))];
+  const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [activeCategory, setActiveCategory] = useState("Todo");
   const [activeTable, setActiveTable] = useState(tables[0]);
   const [cart, setCart] = useState<CartItem[]>([
-    { ...products[1], qty: 1 },
-    { ...products[7], qty: 1, note: "Sin crema" },
+    { ...defaultProducts[1], qty: 1 },
+    { ...defaultProducts[7], qty: 1, note: "Sin crema" },
   ]);
   const [discount, setDiscount] = useState(0);
   const [tip, setTip] = useState(10);
   const [payment, setPayment] = useState(paymentMethods[1]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [isSavingTicket, setIsSavingTicket] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Base de datos lista");
+
+  useEffect(() => {
+    async function loadPointOfSaleData() {
+      try {
+        const [productsResponse, ticketsResponse] = await Promise.all([
+          fetch("/api/products"),
+          fetch("/api/tickets"),
+        ]);
+
+        if (productsResponse.ok) {
+          const productsPayload = (await productsResponse.json()) as { products: Product[] };
+          setProducts(productsPayload.products);
+        }
+
+        if (ticketsResponse.ok) {
+          const ticketsPayload = (await ticketsResponse.json()) as { tickets: Ticket[] };
+          setTickets(ticketsPayload.tickets);
+          setSelectedTicket(ticketsPayload.tickets[0] ?? null);
+        }
+
+        setStatusMessage("Datos sincronizados");
+      } catch {
+        setStatusMessage("Trabajando con datos locales");
+      }
+    }
+
+    void loadPointOfSaleData();
+  }, []);
+
+  const categories = ["Todo", ...Array.from(new Set(products.map((product) => product.category)))];
 
   const visibleProducts = products.filter(
     (product) => activeCategory === "Todo" || product.category === activeCategory,
@@ -105,13 +137,15 @@ export default function Home() {
     setTip(10);
   };
 
-  const createTicket = () => {
-    if (cart.length === 0) {
+  const createTicket = async () => {
+    if (cart.length === 0 || isSavingTicket) {
       return;
     }
 
-    const ticket: Ticket = {
-      folio: `T-${String(1029 + tickets.length).padStart(4, "0")}`,
+    setIsSavingTicket(true);
+    setStatusMessage("Guardando ticket...");
+
+    const ticketPayload = {
       table: activeTable,
       cashier: "Ana Lopez",
       payment,
@@ -120,9 +154,35 @@ export default function Home() {
       totals: { ...totals },
     };
 
-    setTickets((currentTickets) => [ticket, ...currentTickets]);
-    setSelectedTicket(ticket);
-    clearSale();
+    try {
+      const response = await fetch("/api/tickets", {
+        body: JSON.stringify(ticketPayload),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo guardar el ticket.");
+      }
+
+      const payload = (await response.json()) as { ticket: Ticket };
+      setTickets((currentTickets) => [payload.ticket, ...currentTickets]);
+      setSelectedTicket(payload.ticket);
+      clearSale();
+      setStatusMessage(`${payload.ticket.folio} guardado`);
+    } catch {
+      const fallbackTicket: Ticket = {
+        folio: `LOCAL-${Date.now().toString().slice(-6)}`,
+        ...ticketPayload,
+      };
+
+      setTickets((currentTickets) => [fallbackTicket, ...currentTickets]);
+      setSelectedTicket(fallbackTicket);
+      clearSale();
+      setStatusMessage("Ticket local creado; falta sincronizar");
+    } finally {
+      setIsSavingTicket(false);
+    }
   };
 
   const printTicket = () => {
@@ -186,6 +246,7 @@ export default function Home() {
               <div>
                 <p className="text-xs font-semibold uppercase text-[#b64833]">Venta en mostrador y mesas</p>
                 <h1 className="mt-1 text-3xl font-semibold tracking-tight">Nueva venta</h1>
+                <p className="mt-1 text-sm font-medium text-slate-500">{statusMessage}</p>
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
                 {tables.map((table) => (
@@ -352,7 +413,7 @@ export default function Home() {
             disabled={cart.length === 0}
             onClick={createTicket}
           >
-            Cobrar y crear ticket
+            {isSavingTicket ? "Guardando ticket..." : "Cobrar y crear ticket"}
           </button>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">

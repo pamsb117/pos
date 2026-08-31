@@ -1,0 +1,62 @@
+export const createProductsTable = `
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  station TEXT NOT NULL CHECK (station IN ('Barra', 'Cocina')),
+  tag TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createTicketsTable = `
+CREATE TABLE IF NOT EXISTS tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  folio TEXT NOT NULL UNIQUE,
+  table_name TEXT NOT NULL,
+  cashier TEXT NOT NULL,
+  payment TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  subtotal INTEGER NOT NULL,
+  discount_amount INTEGER NOT NULL,
+  tax INTEGER NOT NULL,
+  tip_amount INTEGER NOT NULL,
+  total INTEGER NOT NULL
+)`;
+
+export const createTicketItemsTable = `
+CREATE TABLE IF NOT EXISTS ticket_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id INTEGER NOT NULL,
+  product_id INTEGER,
+  name TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  unit_price INTEGER NOT NULL,
+  station TEXT NOT NULL,
+  note TEXT,
+  FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+)`;
+
+export const createTicketCreatedIndex = `
+CREATE INDEX IF NOT EXISTS idx_tickets_created_at
+ON tickets(created_at)`;
+
+export const createTicketItemsTicketIndex = `
+CREATE INDEX IF NOT EXISTS idx_ticket_items_ticket_id
+ON ticket_items(ticket_id)`;
+
+export const initialProducts = [
+  { name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
+  { name: "Latte", category: "Cafe", price: 58, station: "Barra", tag: "Popular" },
+  { name: "Capuchino", category: "Cafe", price: 56, station: "Barra", tag: null },
+  { name: "Cold Brew", category: "Cafe", price: 64, station: "Barra", tag: "Frio" },
+  { name: "Chai Latte", category: "Bebidas", price: 62, station: "Barra", tag: null },
+  { name: "Limonada Mineral", category: "Bebidas", price: 48, station: "Barra", tag: null },
+  { name: "Croissant", category: "Panaderia", price: 46, station: "Cocina", tag: null },
+  { name: "Pan Frances", category: "Desayunos", price: 118, station: "Cocina", tag: "Brunch" },
+  { name: "Molletes", category: "Desayunos", price: 92, station: "Cocina", tag: null },
+  { name: "Bagel Serrano", category: "Alimentos", price: 126, station: "Cocina", tag: null },
+  { name: "Ensalada Verde", category: "Alimentos", price: 112, station: "Cocina", tag: null },
+  { name: "Cheesecake", category: "Postres", price: 74, station: "Cocina", tag: null },
+] as const;
