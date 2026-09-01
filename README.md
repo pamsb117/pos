@@ -1,4 +1,4 @@
-# Aura Estudio POS
+# Pos Salon
 
 Sistema profesional de agenda y punto de venta para estetica o salon de belleza.
 

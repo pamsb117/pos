@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Aura Estudio POS',
+  title: 'Pos Salon',
   description: 'Agenda y punto de venta profesional para estetica y salon de belleza',
   icons: { icon: '/favicon.svg' },
 };
