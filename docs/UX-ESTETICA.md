@@ -62,3 +62,29 @@ Objetivo: Next/Vinext con API routes y D1, porque el sistema ya usa renderizado 
 - Radios de 6 y 8px; sombras solo para navegacion, panel de cobro y dialogos.
 - Transiciones de 150ms; se desactivan con `prefers-reduced-motion`.
 - Objetivo de implementacion: Next/Vinext App Router con componentes cliente existentes y `lucide-react` para iconografia accesible.
+
+## Liquid Glass V3
+
+### Flujo y estados
+
+El flujo operativo no cambia: agenda, recepcion, cobro y ticket conservan posicion y jerarquia. El tratamiento de vidrio distingue capas sin reducir la velocidad de lectura. Carga, vacio, error, exito y deshabilitado mantienen texto y color semantico, nunca dependen solo de transparencia.
+
+### Componentes
+
+- `GlassSurface`: fondo blanco translucido, borde claro, reflejo superior y desenfoque de 18 a 24px. Variantes `navigation`, `panel`, `floating` y `modal`.
+- `PrimaryAction`: morado con transicion rosa, texto blanco y foco de alto contraste; mantiene estado deshabilitado opaco.
+- `MetricGlass`: vidrio con tinte independiente morado, rosa, verde o azul; valor en texto solido.
+- `StatusBadge`: conserva verde, ambar, azul y rojo para no confundir estados de operacion.
+- `Receipt`: permanece papel opaco para impresion y lectura fiscal.
+
+### Tokens
+
+- Fondo base `#f7f4fb`; texto `#241f2b`; secundario `#706a78`.
+- Primario morado `#7545c7`; violeta profundo `#4c326f`; rosa `#d65388`.
+- Exito `#27856f`, advertencia `#a86a22`, informacion `#3f7091`, error `#b7475a`.
+- Vidrio `rgba(255,255,255,.66)` con borde `rgba(255,255,255,.82)` y sombra `0 16px 40px rgba(67,44,86,.10)`.
+- En pantallas menores a 820px el desenfoque baja a 14px. `prefers-reduced-motion` elimina transiciones y desplazamientos.
+
+### Accesibilidad y aceptacion
+
+Texto normal conserva contraste AA sobre la capa final compuesta. Inputs usan fondo casi opaco; foco visible violeta; estados siguen incluyendo etiqueta textual. Se acepta cuando todas las vistas comparten el material, tickets impresos no cambian y agenda/cobro siguen siendo legibles en escritorio, tablet y movil.
