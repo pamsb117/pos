@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mesa Clara POS - Demo</title>
+    <meta
+      name="description"
+      content="Demo visual de punto de venta para restaurante y cafeteria: tickets, mesas, comandas, caja, productos y reportes."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #101827;
+        --muted: #667085;
+        --line: #d8ded8;
+        --paper: #ffffff;
+        --wash: #eef1ee;
+        --deep: #111b1a;
+        --green: #17443d;
+        --red: #c64d36;
+        --amber: #9a5d12;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--wash);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr) 420px;
+        min-height: 100vh;
+        max-width: 1720px;
+        margin: 0 auto;
+      }
+
+      .sidebar {
+        background: var(--deep);
+        color: white;
+        padding: 20px 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.07);
+        padding: 12px;
+      }
+
+      .logo {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 7px;
+        background: #d1533b;
+        font-weight: 800;
+      }
+
+      .brand strong,
+      .brand span {
+        display: block;
+      }
+
+      .brand span {
+        margin-top: 2px;
+        color: #cbd5e1;
+        font-size: 12px;
+      }
+
+      nav {
+        display: grid;
+        gap: 4px;
+        margin-top: 28px;
+      }
+
+      nav button {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        min-height: 44px;
+        border-radius: 7px;
+        background: transparent;
+        color: #cbd5e1;
+        padding: 0 12px;
+        text-align: left;
+      }
+
+      nav button.active {
+        background: white;
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .drawer {
+        margin-top: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 16px;
+      }
+
+      .drawer p {
+        margin: 0;
+        color: #a7f3d0;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .drawer strong {
+        display: block;
+        margin-top: 12px;
+        font-size: 28px;
+      }
+
+      .main {
+        padding: 20px 24px;
+      }
+
+      .topbar,
+      .card,
+      .checkout,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: center;
+        padding: 18px 20px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 4px;
+        font-size: 32px;
+        letter-spacing: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .tables {
+        display: flex;
+        gap: 8px;
+        border-radius: 10px;
+        background: #f1f5f3;
+        padding: 4px;
+      }
+
+      .tables button {
+        min-height: 40px;
+        border-radius: 7px;
+        background: transparent;
+        color: #475467;
+        padding: 0 12px;
+        font-weight: 700;
+      }
+
+      .tables button.active {
+        background: var(--ink);
+        color: white;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin: 16px 0;
+      }
+
+      .metric {
+        padding: 16px;
+      }
+
+      .metric span {
+        display: block;
+        color: #98a2b3;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 25px;
+      }
+
+      .content {
+        display: none;
+      }
+
+      .content.active {
+        display: block;
+      }
+
+      .catalog-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 14px;
+      }
+
+      .chips {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        border-radius: 10px;
+        background: white;
+        padding: 4px;
+      }
+
+      .chips button {
+        min-height: 36px;
+        white-space: nowrap;
+        border-radius: 7px;
+        background: #f6f8f7;
+        color: #475467;
+        padding: 0 12px;
+        font-weight: 800;
+      }
+
+      .chips button.active {
+        background: var(--green);
+        color: white;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .product {
+        display: flex;
+        min-height: 132px;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 16px;
+        text-align: left;
+      }
+
+      .product .name {
+        display: block;
+        font-weight: 800;
+      }
+
+      .badge {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .barra {
+        background: #edf7f4;
+        color: var(--green);
+      }
+
+      .cocina {
+        background: #fff3df;
+        color: var(--amber);
+      }
+
+      .price {
+        font-size: 25px;
+        font-weight: 800;
+      }
+
+      .checkout {
+        border-top: 0;
+        border-bottom: 0;
+        border-right: 0;
+        border-radius: 0;
+        padding: 20px;
+      }
+
+      .order-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-radius: 12px;
+        background: #f8faf9;
+        padding: 16px;
+      }
+
+      .order-item {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .qty {
+        display: inline-grid;
+        min-width: 42px;
+        height: 34px;
+        place-items: center;
+        border-radius: 7px;
+        background: #f1f5f3;
+        font-weight: 800;
+      }
+
+      .rows {
+        margin: 16px 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 9px 0;
+        color: var(--muted);
+      }
+
+      .row strong {
+        color: var(--ink);
+      }
+
+      .total {
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      .total strong {
+        font-size: 28px;
+      }
+
+      .pay,
+      .secondary {
+        width: 100%;
+        min-height: 48px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 800;
+      }
+
+      .pay {
+        background: var(--red);
+      }
+
+      .secondary {
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--ink);
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 16px;
+      }
+
+      .panel-head {
+        border-bottom: 1px solid var(--line);
+        padding: 18px 20px;
+      }
+
+      .panel-body {
+        padding: 20px;
+      }
+
+      .table-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .table-card {
+        min-height: 165px;
+        padding: 16px;
+        text-align: left;
+      }
+
+      .dark-card {
+        border-radius: 12px;
+        background: var(--deep);
+        color: white;
+        padding: 20px;
+      }
+
+      .command {
+        padding: 16px;
+      }
+
+      .ticket {
+        margin-top: 16px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: #fffdf7;
+        padding: 16px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+
+      .notice {
+        margin-top: 14px;
+        border-radius: 10px;
+        background: #fff3df;
+        color: #7a4208;
+        padding: 12px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 1200px) {
+        .app {
+          grid-template-columns: 210px minmax(0, 1fr);
+        }
+
+        .checkout {
+          grid-column: 1 / -1;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+
+        .grid,
+        .metrics,
+        .table-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .app,
+        .split {
+          display: block;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .topbar,
+        .catalog-head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .tables {
+          overflow-x: auto;
+        }
+
+        .grid,
+        .metrics,
+        .table-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">M</div>
+          <div>
+            <strong>Mesa Clara</strong>
+            <span>POS Restaurante</span>
+          </div>
+        </div>
+        <nav>
+          <button class="active" data-view="Venta">Venta</button>
+          <button data-view="Caja">Caja</button>
+          <button data-view="Mesas">Mesas</button>
+          <button data-view="Barra">Barra</button>
+          <button data-view="Cocina">Cocina</button>
+          <button data-view="Productos">Productos</button>
+          <button data-view="Tickets">Tickets <span>3</span></button>
+          <button data-view="Reportes">Reportes</button>
+        </nav>
+        <div class="drawer">
+          <p>Efectivo esperado</p>
+          <strong>$2,180.00</strong>
+          <span>Turno: Caja Principal</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Sistema operativo del restaurante</p>
+            <h1 id="view-title">Venta</h1>
+            <p class="muted">Demo visual lista para presentar. La version instalada guarda datos reales.</p>
+          </div>
+          <div class="tables">
+            <button class="active">Mostrador</button>
+            <button>Mesa 1</button>
+            <button>Mesa 2</button>
+            <button>Mesa 3</button>
+            <button>Terraza</button>
+          </div>
+        </header>
+
+        <section class="metrics">
+          <div class="metric card"><span>Ventas hoy</span><strong>$3,690.00</strong><p class="muted">12 tickets</p></div>
+          <div class="metric card"><span>Cuenta activa</span><strong>Mostrador</strong><p class="muted">3 articulos</p></div>
+          <div class="metric card"><span>Caja esperada</span><strong>$2,180.00</strong><p class="muted">turno abierto</p></div>
+          <div class="metric card"><span>Cocina / Barra</span><strong>1/2</strong><p class="muted">items en cuenta</p></div>
+        </section>
+
+        <section class="content active" id="Venta">
+          <div class="catalog-head">
+            <div>
+              <h2>Catalogo</h2>
+              <p class="muted">Selecciona productos para agregar a la cuenta.</p>
+            </div>
+            <div class="chips">
+              <button class="active">Todo</button>
+              <button>Cafe</button>
+              <button>Bebidas</button>
+              <button>Desayunos</button>
+              <button>Alimentos</button>
+            </div>
+          </div>
+          <div class="grid" id="product-grid"></div>
+        </section>
+
+        <section class="content" id="Caja">
+          <div class="split">
+            <div class="panel">
+              <div class="panel-head">
+                <p class="eyebrow">Turno abierto</p>
+                <h2>Caja Principal</h2>
+                <p class="muted">Abierta por Ana Lopez · 31/08/26, 10:12 p.m.</p>
+              </div>
+              <div class="metrics panel-body">
+                <div class="metric card"><span>Efectivo esperado</span><strong>$2,180.00</strong><p class="muted">fondo + efectivo</p></div>
+                <div class="metric card"><span>Ventas turno</span><strong>$3,690.00</strong><p class="muted">12 tickets</p></div>
+                <div class="metric card"><span>Entradas</span><strong>$300.00</strong><p class="muted">efectivo agregado</p></div>
+                <div class="metric card"><span>Salidas</span><strong>$120.00</strong><p class="muted">retiros/gastos</p></div>
+              </div>
+            </div>
+            <div class="dark-card">
+              <p class="eyebrow">Corte</p>
+              <h2>$2,180.00</h2>
+              <p>El sistema compara efectivo esperado contra efectivo contado al cierre.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="content" id="Mesas">
+          <div class="split">
+            <div class="panel">
+              <div class="panel-head">
+                <p class="eyebrow">Salon</p>
+                <h2>Mesas y cuentas abiertas</h2>
+                <p class="muted">3 mesas ocupadas · $1,486.00 pendiente por cobrar</p>
+              </div>
+              <div class="table-grid panel-body">
+                <button class="table-card card"><strong>Mostrador</strong><p class="muted">3 articulos</p><span class="badge cocina">Ocupada</span><div class="price">$222.00</div></button>
+                <button class="table-card card"><strong>Mesa 1</strong><p class="muted">Libre para abrir cuenta</p><span class="badge barra">Libre</span><div class="price">$0.00</div></button>
+                <button class="table-card card"><strong>Mesa 2</strong><p class="muted">5 articulos</p><span class="badge cocina">Ocupada</span><div class="price">$817.00</div></button>
+                <button class="table-card card"><strong>Terraza</strong><p class="muted">2 articulos</p><span class="badge cocina">Ocupada</span><div class="price">$447.00</div></button>
+              </div>
+            </div>
+            <div class="dark-card">
+              <p class="eyebrow">Resumen salon</p>
+              <h2>$1,486.00</h2>
+              <p>Total pendiente en cuentas abiertas.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="content" id="Barra">
+          <div class="grid">
+            <article class="command card">
+              <span class="badge barra">Barra</span>
+              <h2>Mesa 2</h2>
+              <p>2 x Latte</p>
+              <p>1 x Cold Brew</p>
+              <button class="secondary">Marcar lista</button>
+            </article>
+            <article class="command card">
+              <span class="badge barra">Barra</span>
+              <h2>Mostrador</h2>
+              <p>1 x Americano</p>
+              <button class="secondary">Marcar lista</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="content" id="Cocina">
+          <div class="grid">
+            <article class="command card">
+              <span class="badge cocina">Cocina</span>
+              <h2>Mesa 3</h2>
+              <p>1 x Pan Frances</p>
+              <p>2 x Molletes</p>
+              <button class="secondary">Marcar lista</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="content" id="Productos">
+          <div class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">Administracion</p>
+              <h2>Catalogo de productos</h2>
+              <p class="muted">Crear, editar, desactivar productos y asignarlos a barra o cocina.</p>
+            </div>
+            <div class="grid panel-body" id="products-admin"></div>
+          </div>
+        </section>
+
+        <section class="content" id="Tickets">
+          <div class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">Auditoria</p>
+              <h2>Tickets emitidos</h2>
+              <p class="muted">Consulta, impresion y cancelacion con motivo obligatorio.</p>
+            </div>
+            <div class="panel-body">
+              <div class="row"><strong>T-1031 · Mostrador</strong><span>$222.00 · Pagado</span></div>
+              <div class="row"><strong>T-1030 · Mesa 2</strong><span>$147.00 · Pagado</span></div>
+              <div class="row"><strong>T-1029 · Mostrador</strong><span>$53.00 · Cancelado</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="content" id="Reportes">
+          <div class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">Direccion</p>
+              <h2>Reportes de venta</h2>
+              <p class="muted">Ventas, ticket promedio, IVA, cancelaciones, pagos y productos mas vendidos.</p>
+            </div>
+            <div class="metrics panel-body">
+              <div class="metric card"><span>Venta neta</span><strong>$3,690.00</strong><p class="muted">12 tickets</p></div>
+              <div class="metric card"><span>Ticket promedio</span><strong>$307.50</strong><p class="muted">por venta</p></div>
+              <div class="metric card"><span>IVA</span><strong>$509.00</strong><p class="muted">acumulado</p></div>
+              <div class="metric card"><span>Cancelados</span><strong>1</strong><p class="muted">tickets anulados</p></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="checkout">
+        <div class="order-title">
+          <div>
+            <p class="eyebrow">Cuenta activa</p>
+            <h2>Mostrador</h2>
+            <p class="muted">3 articulos en la orden</p>
+          </div>
+          <button class="secondary" style="width: auto; padding: 0 12px">Limpiar</button>
+        </div>
+        <div class="order-item">
+          <strong>Latte</strong>
+          <p class="muted">$58.00 · Barra</p>
+          <span class="qty">2</span>
+        </div>
+        <div class="order-item">
+          <strong>Pan Frances</strong>
+          <p class="muted">$118.00 · Cocina · Sin crema</p>
+          <span class="qty">1</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span>Subtotal</span><strong>$234.00</strong></div>
+          <div class="row"><span>IVA</span><strong>$37.00</strong></div>
+          <div class="row"><span>Propina</span><strong>$23.00</strong></div>
+          <div class="row total"><span>Total a cobrar</span><strong>$294.00</strong></div>
+        </div>
+        <button class="pay">Cobrar y crear ticket</button>
+        <button class="secondary">Enviar comanda</button>
+        <div class="ticket">
+          <p style="text-align: center"><strong>MESA CLARA POS</strong><br />Restaurante / Cafeteria</p>
+          <div class="row"><span>Ticket</span><strong>T-1032</strong></div>
+          <div class="row"><span>Mesa</span><strong>Mostrador</strong></div>
+          <div class="row total"><span>Total</span><strong>$294.00</strong></div>
+          <p style="text-align: center">Gracias por su compra</p>
+        </div>
+        <div class="notice">Demo para vista previa. La version instalada usa base de datos local, respaldos e impresion configurada.</div>
+      </aside>
+    </div>
+
+    <script>
+      const products = [
+        ["Americano", "Cafe", 42, "Barra"],
+        ["Latte", "Cafe", 58, "Barra"],
+        ["Cold Brew", "Cafe", 64, "Barra"],
+        ["Chai Latte", "Bebidas", 62, "Barra"],
+        ["Croissant", "Panaderia", 46, "Cocina"],
+        ["Pan Frances", "Desayunos", 118, "Cocina"],
+        ["Molletes", "Desayunos", 92, "Cocina"],
+        ["Cheesecake", "Postres", 74, "Cocina"],
+      ];
+
+      const money = (value) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
+      const grid = document.querySelector("#product-grid");
+      const admin = document.querySelector("#products-admin");
+
+      for (const [name, category, price, station] of products) {
+        const button = document.createElement("button");
+        button.className = "product card";
+        button.innerHTML = `<span><span class="name">${name}</span><span class="muted">${category}</span><br><span class="badge ${station === "Barra" ? "barra" : "cocina"}">${station}</span></span><span class="price">${money(price)}</span>`;
+        grid.appendChild(button);
+
+        const item = document.createElement("div");
+        item.className = "card product";
+        item.innerHTML = `<span><span class="name">${name}</span><span class="muted">${category} · ${station}</span></span><span class="price">${money(price)}</span>`;
+        admin.appendChild(item);
+      }
+
+      const navButtons = document.querySelectorAll("nav button[data-view]");
+      const views = document.querySelectorAll(".content");
+      const title = document.querySelector("#view-title");
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const view = button.dataset.view;
+          navButtons.forEach((item) => item.classList.toggle("active", item === button));
+          views.forEach((section) => section.classList.toggle("active", section.id === view));
+          title.textContent = view;
+        });
+      });
+    </script>
+  </body>
+</html>
