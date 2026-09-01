@@ -35,3 +35,30 @@ Estados cubiertos: carga, agenda vacia, validacion, error de red, cita confirmad
 ## Implementacion
 
 Objetivo: Next/Vinext con API routes y D1, porque el sistema ya usa renderizado React y persistencia en el servidor. Se acepta cuando citas, clientes, personal, catalogo, cobro, tickets, caja y reportes sobreviven recargas; el flujo cita a ticket funciona; y la interfaz se adapta a escritorio y movil.
+
+## Rediseño V2
+
+### Flujo y estados
+
+- La recepcionista identifica en menos de cinco segundos la siguiente cita, citas pendientes y valor del dia.
+- Las acciones `Recibir`, `Cobrar` y `Cancelar` mantienen posicion y jerarquia consistentes; durante guardado quedan bloqueadas y el resultado se anuncia en la barra superior.
+- Agenda vacia, venta vacia y reportes sin datos conservan una accion siguiente clara.
+- En movil la navegacion se convierte en barra horizontal, la agenda apila importe y acciones, y cobro coloca el resumen debajo del catalogo.
+
+### Componentes
+
+- `AppNavigation`: icono Lucide, etiqueta y contador; activo con superficie clara y barra de seleccion.
+- `PageHeading`: icono contextual, titulo, descripcion breve y acciones agrupadas.
+- `Metric`: icono semantico, valor, etiqueta y detalle; cuatro variantes cromaticas discretas.
+- `AppointmentRow`: linea temporal, hora, cliente, servicio, especialista, estado e interacciones validas.
+- `Checkout`: encabezado de cliente, articulos, controles numericos, desglose y accion fija de cobro.
+- `Feedback`: estado de sincronizacion con `aria-live`, foco visible y botones con estado deshabilitado.
+
+### Tokens V2
+
+- Fondo `#f5f6f4`, superficie `#ffffff`, superficie secundaria `#eef1ee`.
+- Texto `#1d2526`, texto secundario `#667171`, borde `#dde2de`.
+- Primario `#28594f`, coral `#bd5967`, azul `#3d6f8d`, dorado `#a76b25`.
+- Radios de 6 y 8px; sombras solo para navegacion, panel de cobro y dialogos.
+- Transiciones de 150ms; se desactivan con `prefers-reduced-motion`.
+- Objetivo de implementacion: Next/Vinext App Router con componentes cliente existentes y `lucide-react` para iconografia accesible.
