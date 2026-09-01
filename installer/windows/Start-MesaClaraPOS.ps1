@@ -21,6 +21,6 @@ if (-not $NoBrowser) {
   Start-Process $Url
 }
 
-Write-Host "Mesa Clara POS iniciado en $Url"
-Write-Host "Para tablets o cocina usa http://IP-DE-ESTA-PC:$Port dentro de la misma red."
-npm run dev -- --host 0.0.0.0 --port $Port 2>&1 | Tee-Object -FilePath (Join-Path $LogDir "mesa-clara-pos.log") -Append
+Write-Host "Aura Estudio POS iniciado en $Url"
+Write-Host "Para tablets o recepcion usa http://IP-DE-ESTA-PC:$Port dentro de la misma red."
+npm run dev -- --host 0.0.0.0 --port $Port 2>&1 | Tee-Object -FilePath (Join-Path $LogDir "aura-estudio-pos.log") -Append

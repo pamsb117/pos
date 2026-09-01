@@ -1,5 +1,5 @@
 param(
-  [string]$InstallPath = "$env:ProgramData\MesaClaraPOS",
+  [string]$InstallPath = "$env:ProgramData\AuraEstudioPOS",
   [int]$Port = 3000,
   [switch]$CreateStartupShortcut
 )
@@ -9,8 +9,8 @@ $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $DataPath = Join-Path $InstallPath "data"
 $BackupPath = Join-Path $InstallPath "backups"
 $LogsPath = Join-Path $InstallPath "logs"
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "Mesa Clara POS.lnk"
-$StartupShortcutPath = Join-Path ([Environment]::GetFolderPath("Startup")) "Mesa Clara POS.lnk"
+$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "Aura Estudio POS.lnk"
+$StartupShortcutPath = Join-Path ([Environment]::GetFolderPath("Startup")) "Aura Estudio POS.lnk"
 
 function Assert-Command($Name, $InstallHint) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -57,7 +57,7 @@ if ($CreateStartupShortcut) {
 }
 
 Write-Host ""
-Write-Host "Mesa Clara POS instalado correctamente."
+Write-Host "Aura Estudio POS instalado correctamente."
 Write-Host "Acceso local: http://localhost:$Port"
 Write-Host "Datos locales: $DataPath"
 Write-Host "Respaldos: $BackupPath"

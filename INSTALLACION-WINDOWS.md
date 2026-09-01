@@ -1,4 +1,4 @@
-# Mesa Clara POS - Instalacion Windows
+# Aura Estudio POS - Instalacion Windows
 
 ## Equipo recomendado
 
@@ -12,7 +12,7 @@
 
 ## Instalacion en la computadora principal
 
-1. Descomprimir el paquete `MesaClaraPOS-Windows.zip`.
+1. Descomprimir el paquete `AuraEstudioPOS-Windows.zip`.
 2. Abrir PowerShell dentro de la carpeta descomprimida.
 3. Ejecutar:
 
@@ -30,7 +30,7 @@ El instalador:
 
 ## Arranque diario
 
-Usar el acceso directo `Mesa Clara POS` del escritorio.
+Usar el acceso directo `Aura Estudio POS` del escritorio.
 
 Tambien se puede iniciar manualmente:
 
@@ -61,7 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Backup-Mes
 Los respaldos se guardan en:
 
 ```text
-C:\ProgramData\MesaClaraPOS\backups
+C:\ProgramData\AuraEstudioPOS\backups
 ```
 
 ## Desinstalacion

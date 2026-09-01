@@ -6,9 +6,59 @@ CREATE TABLE IF NOT EXISTS products (
   price INTEGER NOT NULL,
   station TEXT NOT NULL CHECK (station IN ('Barra', 'Cocina')),
   tag TEXT,
+  duration_minutes INTEGER NOT NULL DEFAULT 0,
+  commission_percent INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`;
+
+export const createClientsTable = `
+CREATE TABLE IF NOT EXISTS clients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  notes TEXT,
+  last_visit TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createStaffTable = `
+CREATE TABLE IF NOT EXISTS staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  specialty TEXT NOT NULL,
+  commission_percent INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createAppointmentsTable = `
+CREATE TABLE IF NOT EXISTS appointments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  staff_id INTEGER NOT NULL,
+  product_id INTEGER,
+  service_name TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL DEFAULT 60,
+  status TEXT NOT NULL CHECK (status IN ('confirmed', 'in_service', 'completed', 'cancelled')) DEFAULT 'confirmed',
+  notes TEXT,
+  total INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id),
+  FOREIGN KEY (staff_id) REFERENCES staff(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+)`;
+
+export const createClientsPhoneIndex = `
+CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone)`;
+
+export const createAppointmentsStartIndex = `
+CREATE INDEX IF NOT EXISTS idx_appointments_starts_at ON appointments(starts_at)`;
+
+export const createAppointmentsStaffIndex = `
+CREATE INDEX IF NOT EXISTS idx_appointments_staff_start ON appointments(staff_id, starts_at)`;
 
 export const createTicketsTable = `
 CREATE TABLE IF NOT EXISTS tickets (
@@ -19,6 +69,9 @@ CREATE TABLE IF NOT EXISTS tickets (
   payment TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   shift_id INTEGER,
+  client_id INTEGER,
+  staff_id INTEGER,
+  business_type TEXT NOT NULL DEFAULT 'salon',
   status TEXT NOT NULL CHECK (status IN ('paid', 'cancelled')) DEFAULT 'paid',
   cancelled_at TEXT,
   cancel_reason TEXT,
@@ -156,16 +209,15 @@ CREATE INDEX IF NOT EXISTS idx_kitchen_command_items_command_id
 ON kitchen_command_items(command_id)`;
 
 export const initialProducts = [
-  { name: "Americano", category: "Cafe", price: 42, station: "Barra", tag: "Caliente" },
-  { name: "Latte", category: "Cafe", price: 58, station: "Barra", tag: "Popular" },
-  { name: "Capuchino", category: "Cafe", price: 56, station: "Barra", tag: null },
-  { name: "Cold Brew", category: "Cafe", price: 64, station: "Barra", tag: "Frio" },
-  { name: "Chai Latte", category: "Bebidas", price: 62, station: "Barra", tag: null },
-  { name: "Limonada Mineral", category: "Bebidas", price: 48, station: "Barra", tag: null },
-  { name: "Croissant", category: "Panaderia", price: 46, station: "Cocina", tag: null },
-  { name: "Pan Frances", category: "Desayunos", price: 118, station: "Cocina", tag: "Brunch" },
-  { name: "Molletes", category: "Desayunos", price: 92, station: "Cocina", tag: null },
-  { name: "Bagel Serrano", category: "Alimentos", price: 126, station: "Cocina", tag: null },
-  { name: "Ensalada Verde", category: "Alimentos", price: 112, station: "Cocina", tag: null },
-  { name: "Cheesecake", category: "Postres", price: 74, station: "Cocina", tag: null },
+  { name: "Corte y peinado", category: "Cabello", price: 350, station: "Barra", tag: "60 min" },
+  { name: "Tinte completo", category: "Color", price: 950, station: "Barra", tag: "120 min" },
+  { name: "Balayage", category: "Color", price: 1650, station: "Barra", tag: "180 min" },
+  { name: "Manicure gel", category: "Unas", price: 320, station: "Barra", tag: "60 min" },
+  { name: "Pedicure spa", category: "Unas", price: 420, station: "Barra", tag: "75 min" },
+  { name: "Diseno de ceja", category: "Rostro", price: 180, station: "Barra", tag: "30 min" },
+  { name: "Pestanas clasicas", category: "Pestanas", price: 650, station: "Barra", tag: "90 min" },
+  { name: "Tratamiento hidratante", category: "Tratamientos", price: 480, station: "Barra", tag: "45 min" },
+  { name: "Shampoo profesional", category: "Productos", price: 290, station: "Cocina", tag: "Venta" },
+  { name: "Mascarilla reparadora", category: "Productos", price: 340, station: "Cocina", tag: "Venta" },
+  { name: "Aceite capilar", category: "Productos", price: 260, station: "Cocina", tag: "Venta" },
 ] as const;

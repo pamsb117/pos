@@ -1,12 +1,12 @@
 param(
-  [string]$InstallPath = "$env:ProgramData\MesaClaraPOS"
+  [string]$InstallPath = "$env:ProgramData\AuraEstudioPOS"
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $BackupPath = Join-Path $InstallPath "backups"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$ArchivePath = Join-Path $BackupPath "mesa-clara-pos-backup-$Timestamp.zip"
+$ArchivePath = Join-Path $BackupPath "aura-estudio-pos-backup-$Timestamp.zip"
 
 New-Item -ItemType Directory -Force -Path $BackupPath | Out-Null
 

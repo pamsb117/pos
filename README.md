@@ -1,14 +1,15 @@
-# Mesa Clara POS Demo
+# Aura Estudio POS
 
-Demo visual de un sistema de punto de venta para restaurante/cafeteria.
+Sistema profesional de agenda y punto de venta para estetica o salon de belleza.
 
 ## Modulos incluidos en la demo
 
-- Venta y creacion de tickets.
-- Mesas y cuentas abiertas.
-- Comandas para barra y cocina.
+- Agenda de citas y seguimiento de servicios.
+- Clientes e historial de visitas.
+- Personal, especialidades y comisiones.
+- Venta de servicios y productos con tickets.
 - Caja y corte.
-- Administracion de productos.
+- Administracion de servicios y productos.
 - Tickets y cancelaciones.
 - Reportes basicos.
 

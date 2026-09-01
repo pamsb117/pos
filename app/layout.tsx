@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Mesa Clara POS',
-  description: 'Punto de venta para restaurante y cafeteria',
+  title: 'Aura Estudio POS',
+  description: 'Agenda y punto de venta profesional para estetica y salon de belleza',
 };
 
 export default function RootLayout({

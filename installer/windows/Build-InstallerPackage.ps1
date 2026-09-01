@@ -1,5 +1,5 @@
 param(
-  [string]$OutputPath = ".\outputs\MesaClaraPOS-Windows.zip"
+  [string]$OutputPath = ".\outputs\AuraEstudioPOS-Windows.zip"
 )
 
 $ErrorActionPreference = "Stop"

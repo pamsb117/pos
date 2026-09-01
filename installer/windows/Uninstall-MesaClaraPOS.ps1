@@ -4,8 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$DesktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Mesa Clara POS.lnk"
-$StartupShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) "Mesa Clara POS.lnk"
+$DesktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Aura Estudio POS.lnk"
+$StartupShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) "Aura Estudio POS.lnk"
 
 Remove-Item -LiteralPath $DesktopShortcut -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $StartupShortcut -Force -ErrorAction SilentlyContinue
@@ -21,4 +21,4 @@ if ($RemoveLocalData) {
   }
 }
 
-Write-Host "Mesa Clara POS desinstalado."
+Write-Host "Aura Estudio POS desinstalado."
