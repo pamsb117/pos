@@ -10,6 +10,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "screenshot": "node scripts/capture-screenshot.mjs",
     "pos:install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Install-MesaClaraPOS.ps1",
     "pos:start:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Start-MesaClaraPOS.ps1",
     "pos:backup:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Backup-MesaClaraPOS.ps1",
