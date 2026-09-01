@@ -1,0 +1,29 @@
+name: Visual check
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+      - run: npm ci
+      - run: npm run build
+      - run: npm run screenshot
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pos-salon-screenshot
+          path: artifacts/pos-salon.png

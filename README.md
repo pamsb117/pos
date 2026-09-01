@@ -24,3 +24,12 @@ respaldos e impresion configurada.
 Cuando GitHub Pages este activo, la demo estara disponible en:
 
 https://pamsb117.github.io/pos/
+
+## Capturas visuales
+
+Ejecuta `npm run screenshot` para iniciar la aplicacion y guardar una captura en
+`artifacts/pos-salon.png`. El comando detecta Chrome o Chromium; si no esta en una
+ruta habitual, configura `CHROME_PATH` con la ruta completa del ejecutable.
+
+El workflow `Visual check` ejecuta esta comprobacion automaticamente en cada pull
+request y publica la captura como un artefacto descargable de GitHub Actions.

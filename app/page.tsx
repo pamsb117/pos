@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   BarChart3, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign,
   ClipboardList, CloudOff, CreditCard, ReceiptText, Scissors, Sparkles,
@@ -26,10 +26,12 @@ const navigation = [
 const money = (n:number) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n);
 const today = () => new Date().toLocaleDateString("en-CA");
 const labels = {confirmed:"Confirmada",in_service:"En servicio",completed:"Completada",cancelled:"Cancelada"};
+const subscribeAuth = (notify:()=>void) => { window.addEventListener("pos-salon-auth",notify); return () => window.removeEventListener("pos-salon-auth",notify); };
+const getAuthSnapshot = () => sessionStorage.getItem("pos-salon-auth")==="1";
+const getServerAuthSnapshot = () => false;
 
 export default function Home(){
-  const [authed,setAuthed]=useState(false);
-  useEffect(()=>{if(typeof window!=="undefined"&&sessionStorage.getItem("pos-salon-auth")==="1")setAuthed(true);},[]);
+  const authed=useSyncExternalStore(subscribeAuth,getAuthSnapshot,getServerAuthSnapshot);
   const [view,setView]=useState("Agenda"); const [products,setProducts]=useState<Product[]>([]); const [clients,setClients]=useState<Client[]>([]); const [staff,setStaff]=useState<Staff[]>([]); const [appointments,setAppointments]=useState<Appointment[]>([]); const [tickets,setTickets]=useState<Ticket[]>([]); const [cash,setCash]=useState<Cash|null>(null); const [reports,setReports]=useState<Reports|null>(null);
   const [cart,setCart]=useState<CartItem[]>([]); const [clientId,setClientId]=useState<number|null>(null); const [staffId,setStaffId]=useState<number|null>(null); const [appointmentId,setAppointmentId]=useState<number|null>(null); const [date,setDate]=useState(today()); const [payment,setPayment]=useState("Tarjeta"); const [discount,setDiscount]=useState(0); const [tip,setTip]=useState(0); const [category,setCategory]=useState("Todo"); const [message,setMessage]=useState("Sincronizando..."); const [busy,setBusy]=useState(false); const [modal,setModal]=useState(false); const [selectedTicket,setSelectedTicket]=useState<Ticket|null>(null); const [justAdded,setJustAdded]=useState<number|null>(null);
 
@@ -39,9 +41,9 @@ export default function Home(){
     const [p,s,t,c,r]=await Promise.all(responses.map(x=>x.json()));
     setProducts(p.products); setClients(s.clients); setStaff(s.staff); setAppointments(s.appointments); setDate(current=>s.appointments.some((a:Appointment)=>a.startsAt.startsWith(current))?current:s.appointments[0]?.startsAt.slice(0,10)??current); setTickets(t.tickets); setSelectedTicket((current)=>current??t.tickets[0]??null); setCash(c.register); setReports(r.reports);
   }
-  useEffect(()=>{if(!authed)return;load().then(()=>setMessage("Datos sincronizados")).catch(()=>setMessage("Sin conexion con la base de datos"));},[authed]);
+  useEffect(()=>{if(!authed)return;async function sync(){try{await load();setMessage("Datos sincronizados");}catch{setMessage("Sin conexion con la base de datos");}}void sync();},[authed]);
   const totals=useMemo<Totals>(()=>{const subtotal=cart.reduce((s,x)=>s+x.price*x.qty,0);const discountAmount=Math.round(subtotal*discount/100);const base=subtotal-discountAmount;const tax=Math.round(base*16/116);const tipAmount=Math.round(base*tip/100);return{subtotal,discountAmount,tax,tipAmount,total:base+tipAmount};},[cart,discount,tip]);
-  if(!authed)return <Login onSuccess={()=>{sessionStorage.setItem("pos-salon-auth","1");setAuthed(true);}}/>;
+  if(!authed)return <Login onSuccess={()=>{sessionStorage.setItem("pos-salon-auth","1");window.dispatchEvent(new Event("pos-salon-auth"));}}/>;
   const day=appointments.filter(a=>a.startsAt.startsWith(date)).sort((a,b)=>a.startsAt.localeCompare(b.startsAt));
   const cats=["Todo",...Array.from(new Set(products.map(p=>p.category)))]; const visible=products.filter(p=>category==="Todo"||p.category===category);
   async function salon(body:Record<string,unknown>){const res=await fetch("/api/salon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.error);if(data.appointments)setAppointments(data.appointments);return data;}
