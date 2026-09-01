@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Aura Estudio POS',
   description: 'Agenda y punto de venta profesional para estetica y salon de belleza',
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
