@@ -26,3 +26,12 @@ el giro del negocio. Todo se guarda solo en el navegador donde se usa
 
 La version instalable (`app/`, `db/`) usa backend y base de datos. Ver
 `INSTALLACION-WINDOWS.md`.
+
+## Capturas visuales
+
+Ejecuta `npm run screenshot` para iniciar la aplicacion y guardar una captura en
+`artifacts/pos-salon.png`. El comando detecta Chrome o Chromium; si no esta en una
+ruta habitual, configura `CHROME_PATH` con la ruta completa del ejecutable.
+
+El workflow `Visual check` ejecuta esta comprobacion automaticamente en cada pull
+request y publica la captura como un artefacto descargable de GitHub Actions.
