@@ -1,26 +1,28 @@
 # Pos Salon
 
-Sistema profesional de agenda y punto de venta para estetica o salon de belleza.
+Punto de venta, agenda y caja para negocios de servicios y comercio:
+esteticas, barberias, consultorios, cafeterias, tiendas.
 
-## Modulos incluidos en la demo
+## Modulos
 
-- Agenda de citas y seguimiento de servicios.
+- Agenda de citas y seguimiento de servicios (opcional segun el giro).
+- Cobro con descuento, propina y formas de pago.
 - Clientes e historial de visitas.
-- Personal, especialidades y comisiones.
-- Venta de servicios y productos con tickets.
-- Caja y corte.
-- Administracion de servicios y productos.
-- Tickets y cancelaciones.
-- Reportes basicos.
-
-## Nota importante
-
-Esta demo publicada en GitHub Pages es una version visual para presentacion.
-La version instalada del sistema incluye backend, base de datos local, persistencia,
-respaldos e impresion configurada.
+- Catalogo de servicios y productos.
+- Personal y comisiones.
+- Caja: apertura, movimientos y corte.
+- Tickets, cancelaciones e impresion.
+- Reportes de ventas.
+- Configuracion: nombre del negocio, RFC, mensaje del ticket y giro.
 
 ## Demo
 
-Cuando GitHub Pages este activo, la demo estara disponible en:
-
 https://pamsb117.github.io/pos/
+
+La demo (`docs/index.html`) es funcional para pruebas: se pueden registrar
+clientes, citas, conceptos, cobros y movimientos de caja, y cambiar el nombre y
+el giro del negocio. Todo se guarda solo en el navegador donde se usa
+(localStorage); no hay servidor ni base de datos detras.
+
+La version instalable (`app/`, `db/`) usa backend y base de datos. Ver
+`INSTALLACION-WINDOWS.md`.
