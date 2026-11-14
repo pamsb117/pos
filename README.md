@@ -1,7 +1,8 @@
-# Pos Salon
+# Punto de venta
 
 Punto de venta, agenda y caja para negocios de servicios y comercio:
-esteticas, barberias, consultorios, cafeterias, tiendas.
+esteticas, barberias, consultorios, cafeterias, tiendas. Cada instalacion se
+configura con el nombre y el giro del negocio.
 
 ## Modulos
 
@@ -14,6 +15,7 @@ esteticas, barberias, consultorios, cafeterias, tiendas.
 - Tickets, cancelaciones e impresion.
 - Reportes de ventas.
 - Configuracion: nombre del negocio, RFC, mensaje del ticket y giro.
+- Usuarios con contrasena y dos niveles: administrador y cajero.
 
 ## Demo
 
@@ -24,8 +26,21 @@ clientes, citas, conceptos, cobros y movimientos de caja, y cambiar el nombre y
 el giro del negocio. Todo se guarda solo en el navegador donde se usa
 (localStorage); no hay servidor ni base de datos detras.
 
-La version instalable (`app/`, `db/`) usa backend y base de datos. Ver
+La demo entra con usuario `Prueba` y contrasena `22556`. Es solo una pantalla
+de muestra: esos datos estan en el codigo de la pagina.
+
+## Version instalable
+
+`app/`, `components/` y `db/` son el sistema real: servidor, base de datos,
+inicio de sesion con usuarios propios y configuracion inicial del negocio. Ver
 `INSTALLACION-WINDOWS.md`.
+
+```bash
+npm install
+npm run dev      # desarrollo
+npm run build    # compilar
+npm run start    # servir la version compilada
+```
 
 ## Capturas visuales
 

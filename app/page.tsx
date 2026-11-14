@@ -1,84 +1,325 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import {
-  BarChart3, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign,
-  ClipboardList, CloudOff, CreditCard, ReceiptText, Scissors, Sparkles,
-  UserRound, UsersRound, WalletCards,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, CheckCircle2, ChevronRight, CloudOff, LogOut } from "lucide-react";
+import { GIROS, type BusinessSettings } from "@/db/giros";
+import { Login, Setup } from "@/components/pos/access";
+import { Settings } from "@/components/pos/settings";
+import { SESSION_EXPIRED, api, errorMessage, initials, money, today, type Appointment, type AppointmentStatus, type Cash, type CartItem, type Client, type Product, type PublicBusiness, type Reports, type Staff, type Ticket, type Totals, type User } from "@/components/pos/shared";
+import { Agenda, AppointmentForm, Catalog, Clients, Heading, People, Receipt, Register, Report, STATUS_LABELS, Sale, TicketList, VIEW_ICONS, type ViewKey } from "@/components/pos/views";
 
-type Product = { id:number; name:string; category:string; price:number; station:"Barra"|"Cocina"; tag:string|null; durationMinutes:number; commissionPercent:number };
-type Client = { id:number; name:string; phone:string; email:string|null; notes:string|null; lastVisit:string|null };
-type Staff = { id:number; name:string; specialty:string; commissionPercent:number };
-type Appointment = { id:number; clientId:number; clientName:string; clientPhone:string; staffId:number; staffName:string; productId:number|null; serviceName:string; startsAt:string; durationMinutes:number; status:"confirmed"|"in_service"|"completed"|"cancelled"; notes:string|null; total:number };
-type CartItem = Product & { qty:number };
-type Totals = { subtotal:number; discountAmount:number; tax:number; tipAmount:number; total:number };
-type Ticket = { folio:string; table:string; cashier:string; payment:string; createdAt:string; status:"paid"|"cancelled"; items:CartItem[]; totals:Totals };
-type Cash = { openShift:{ id:number; cashier:string; openingCash:number }|null; movements:Array<{id:number;type:"in"|"out";reason:string;amount:number;createdAt:string}>; summary:{cashSales:number;cardSales:number;transferSales:number;cashIn:number;cashOut:number;expectedCash:number;ticketCount:number;totalSales:number} };
-type Reports = { totals:{ticketCount:number;totalSales:number;subtotal:number;tax:number;tips:number;cancelledTickets:number}; payments:Array<{payment:string;count:number;total:number}>; products:Array<{name:string;qty:number;total:number}> };
+type AuthStatus = { needsSetup: boolean; user: User | null; settings: BusinessSettings | PublicBusiness };
+type Session =
+  | { status: "loading" }
+  | { status: "offline" }
+  | { status: "setup" }
+  | { status: "login"; business: PublicBusiness }
+  | { status: "ready"; user: User; settings: BusinessSettings };
 
-const navigation = [
-  { label:"Agenda", icon:CalendarDays }, { label:"Cobro", icon:CircleDollarSign },
-  { label:"Clientes", icon:UserRound }, { label:"Servicios", icon:Scissors },
-  { label:"Personal", icon:UsersRound }, { label:"Caja", icon:WalletCards },
-  { label:"Tickets", icon:ReceiptText }, { label:"Reportes", icon:BarChart3 },
-];
-const money = (n:number) => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n);
-const today = () => new Date().toLocaleDateString("en-CA");
-const labels = {confirmed:"Confirmada",in_service:"En servicio",completed:"Completada",cancelled:"Cancelada"};
-const subscribeAuth = (notify:()=>void) => { window.addEventListener("pos-salon-auth",notify); return () => window.removeEventListener("pos-salon-auth",notify); };
-const getAuthSnapshot = () => sessionStorage.getItem("pos-salon-auth")==="1";
-const getServerAuthSnapshot = () => false;
+const APP_VERSION = "1.2";
 
-export default function Home(){
-  const authed=useSyncExternalStore(subscribeAuth,getAuthSnapshot,getServerAuthSnapshot);
-  const [view,setView]=useState("Agenda"); const [products,setProducts]=useState<Product[]>([]); const [clients,setClients]=useState<Client[]>([]); const [staff,setStaff]=useState<Staff[]>([]); const [appointments,setAppointments]=useState<Appointment[]>([]); const [tickets,setTickets]=useState<Ticket[]>([]); const [cash,setCash]=useState<Cash|null>(null); const [reports,setReports]=useState<Reports|null>(null);
-  const [cart,setCart]=useState<CartItem[]>([]); const [clientId,setClientId]=useState<number|null>(null); const [staffId,setStaffId]=useState<number|null>(null); const [appointmentId,setAppointmentId]=useState<number|null>(null); const [date,setDate]=useState(today()); const [payment,setPayment]=useState("Tarjeta"); const [discount,setDiscount]=useState(0); const [tip,setTip]=useState(0); const [category,setCategory]=useState("Todo"); const [message,setMessage]=useState("Sincronizando..."); const [busy,setBusy]=useState(false); const [modal,setModal]=useState(false); const [selectedTicket,setSelectedTicket]=useState<Ticket|null>(null); const [justAdded,setJustAdded]=useState<number|null>(null);
+export default function Home() {
+  const [session, setSession] = useState<Session>({ status: "loading" });
 
-  async function load(){
-    const responses=await Promise.all([fetch("/api/products"),fetch("/api/salon"),fetch("/api/tickets"),fetch("/api/cash"),fetch("/api/reports")]);
-    if(responses.some(r=>!r.ok)) throw new Error("No se pudo sincronizar");
-    const [p,s,t,c,r]=await Promise.all(responses.map(x=>x.json()));
-    setProducts(p.products); setClients(s.clients); setStaff(s.staff); setAppointments(s.appointments); setDate(current=>s.appointments.some((a:Appointment)=>a.startsAt.startsWith(current))?current:s.appointments[0]?.startsAt.slice(0,10)??current); setTickets(t.tickets); setSelectedTicket((current)=>current??t.tickets[0]??null); setCash(c.register); setReports(r.reports);
+  const check = useCallback(async () => {
+    try {
+      const auth = await api<AuthStatus>("/api/auth");
+      if (auth.needsSetup) setSession({ status: "setup" });
+      else if (auth.user) setSession({ status: "ready", user: auth.user, settings: auth.settings as BusinessSettings });
+      else setSession({ status: "login", business: auth.settings });
+    } catch {
+      setSession({ status: "offline" });
+    }
+  }, []);
+
+  useEffect(() => {
+    async function refreshSession() {
+      await check();
+    }
+    void refreshSession();
+    // Any API call that comes back 401 means the session ended; ask the server where we stand.
+    const onExpired = () => void refreshSession();
+    window.addEventListener(SESSION_EXPIRED, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired);
+  }, [check]);
+
+  if (session.status === "loading") return <div className="login-screen"><p className="boot-note">Cargando...</p></div>;
+  if (session.status === "offline") {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <h1>Sin conexion con el servidor</h1>
+          <p>No se pudo abrir la base de datos del punto de venta.</p>
+          <button className="button primary" onClick={() => void check()}>Reintentar</button>
+        </div>
+      </div>
+    );
   }
-  useEffect(()=>{if(!authed)return;async function sync(){try{await load();setMessage("Datos sincronizados");}catch{setMessage("Sin conexion con la base de datos");}}void sync();},[authed]);
-  const totals=useMemo<Totals>(()=>{const subtotal=cart.reduce((s,x)=>s+x.price*x.qty,0);const discountAmount=Math.round(subtotal*discount/100);const base=subtotal-discountAmount;const tax=Math.round(base*16/116);const tipAmount=Math.round(base*tip/100);return{subtotal,discountAmount,tax,tipAmount,total:base+tipAmount};},[cart,discount,tip]);
-  if(!authed)return <Login onSuccess={()=>{sessionStorage.setItem("pos-salon-auth","1");window.dispatchEvent(new Event("pos-salon-auth"));}}/>;
-  const day=appointments.filter(a=>a.startsAt.startsWith(date)).sort((a,b)=>a.startsAt.localeCompare(b.startsAt));
-  const cats=["Todo",...Array.from(new Set(products.map(p=>p.category)))]; const visible=products.filter(p=>category==="Todo"||p.category===category);
-  async function salon(body:Record<string,unknown>){const res=await fetch("/api/salon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.error);if(data.appointments)setAppointments(data.appointments);return data;}
-  function add(product:Product){setCart(current=>{const found=current.find(x=>x.id===product.id);return found?current.map(x=>x.id===product.id?{...x,qty:x.qty+1}:x):[...current,{...product,qty:1}]});setJustAdded(product.id);setTimeout(()=>setJustAdded(current=>current===product.id?null:current),450);}
-  function prepare(a:Appointment){const product=products.find(p=>p.id===a.productId);setCart(product?[{...product,qty:1}]:[]);setClientId(a.clientId);setStaffId(a.staffId);setAppointmentId(a.id);setView("Cobro");setMessage(`Cobro preparado para ${a.clientName}`);}
-  async function charge(){if(!cart.length)return;setBusy(true);try{const client=clients.find(c=>c.id===clientId);const res=await fetch("/api/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({table:client?.name||"Venta mostrador",cashier:"Recepcion",payment,clientId,staffId,appointmentId,items:cart,totals})});const data=await res.json();if(!res.ok)throw new Error(data.error);setSelectedTicket(data.ticket);setCart([]);setAppointmentId(null);await load();setView("Tickets");setMessage(`${data.ticket.folio} creado correctamente`);}catch(e){setMessage(e instanceof Error?e.message:"No se pudo cobrar");}finally{setBusy(false);}}
+  if (session.status === "setup") return <Setup onSuccess={(next) => setSession({ status: "ready", ...next })} />;
+  if (session.status === "login") return <Login business={session.business} onSuccess={(next) => setSession({ status: "ready", ...next })} />;
 
-  return <main><header className="topbar"><div className="brand-mark">PS</div><div className="brand"><strong>Pos Salon</strong><span>Agenda y punto de venta</span></div><div className="topbar-context"><CalendarDays size={15}/><span>{new Date(date+"T12:00").toLocaleDateString("es-MX",{day:"numeric",month:"short"})}</span></div><div className={`sync ${message.includes("Sin conexion")?"bad":""}`} aria-live="polite">{message.includes("Sin conexion")?<CloudOff size={15}/>:<CheckCircle2 size={15}/>}<span>{message}</span><div className="user-avatar">R</div><b>Recepcion</b></div></header>
-    <div className="app-shell"><nav className="sidebar" aria-label="Navegacion principal"><div className="nav-heading"><span>Espacio de trabajo</span><small>ESTETICA</small></div>{navigation.map(({label,icon:Icon})=><button className={view===label?"active":""} key={label} onClick={()=>setView(label)}><Icon size={17}/><span>{label}</span><b>{label==="Agenda"?day.length:label==="Cobro"&&cart.length?cart.reduce((s,x)=>s+x.qty,0):""}</b>{view===label&&<ChevronRight className="nav-chevron" size={14}/>}</button>)}<div className="nav-footer"><span><CheckCircle2 size={14}/> Respaldo activo</span><small>Pos Salon · v1.1</small></div></nav>
-      <section className="workspace"><div key={view} className="view-enter">{view==="Agenda"&&<Agenda date={date} setDate={setDate} items={day} newAppointment={()=>setModal(true)} update={async(id,status)=>{await salon({action:"appointmentStatus",id,status});setMessage(`Cita ${labels[status].toLowerCase()}`);}} prepare={prepare}/>} {view==="Cobro"&&<Sale products={visible} cats={cats} category={category} setCategory={setCategory} cart={cart} add={add} justAdded={justAdded} qty={(id,d)=>setCart(c=>c.map(x=>x.id===id?{...x,qty:x.qty+d}:x).filter(x=>x.qty>0))} clients={clients} staff={staff} clientId={clientId} staffId={staffId} setClientId={setClientId} setStaffId={setStaffId} payment={payment} setPayment={setPayment} discount={discount} tip={tip} setDiscount={setDiscount} setTip={setTip} totals={totals} busy={busy} charge={charge}/>} {view==="Clientes"&&<Clients clients={clients} refresh={async()=>{await load();setMessage("Cliente guardado");}}/>} {view==="Servicios"&&<Catalog products={products} refresh={load}/>} {view==="Personal"&&<People staff={staff} refresh={load}/>} {view==="Caja"&&<Register cash={cash} refresh={load}/>} {view==="Tickets"&&<TicketList tickets={tickets} selected={selectedTicket} select={setSelectedTicket} refresh={load}/>} {view==="Reportes"&&<Report data={reports} staff={staff}/>}</div></section>
-    </div>{modal&&<AppointmentForm clients={clients} staff={staff} services={products.filter(p=>p.station==="Barra")} date={date} close={()=>setModal(false)} save={async body=>{await salon({action:"appointment",...body});setModal(false);setMessage("Cita agendada correctamente");}}/>}{selectedTicket&&<div className="print-only"><Receipt ticket={selectedTicket}/></div>}</main>;
+  return (
+    <Workspace
+      user={session.user}
+      settings={session.settings}
+      onSettings={(settings) => setSession({ status: "ready", user: session.user, settings })}
+      onLogout={async () => {
+        await api("/api/auth", { action: "logout" }).catch(() => {});
+        await check();
+      }}
+    />
+  );
 }
 
-function Heading({eyebrow,title,action}:{eyebrow:string;title:string;action?:React.ReactNode}){const Icon=eyebrow==="Recepcion"?CalendarDays:eyebrow==="Punto de venta"?CircleDollarSign:eyebrow==="Directorio"?UserRound:eyebrow==="Catalogo"?Scissors:eyebrow==="Equipo"?UsersRound:eyebrow==="Control de efectivo"?WalletCards:eyebrow==="Ventas"?ReceiptText:BarChart3;return <div className="heading"><div className="heading-copy"><span className="heading-icon"><Icon size={18}/></span><div><span>{eyebrow}</span><h1>{title}</h1></div></div>{action}</div>}
-function Metric({label,value,detail,percent}:{label:string;value:string;detail:string;percent?:number}){const Icon=label.includes("Venta")||label.includes("Servicios")?CircleDollarSign:label.includes("Cita")||label.includes("recibir")?CalendarDays:label.includes("Tarjeta")?CreditCard:label.includes("Transfer")?WalletCards:label.includes("Ocupacion")?ClipboardList:BarChart3;return <div className="metric"><div className="metric-top"><span>{label}</span><i><Icon size={16}/></i></div><strong>{value}</strong><small>{detail}</small>{percent!=null&&<div className="bar"><div style={{width:`${percent}%`}}/></div>}</div>}
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>}
-function Login({onSuccess}:{onSuccess:()=>void}){const[user,setUser]=useState("");const[pass,setPass]=useState("");const[error,setError]=useState("");function submit(e:React.FormEvent){e.preventDefault();if(user==="Prueba"&&pass==="22556"){setError("");onSuccess();}else{setError("Usuario o contrasena incorrectos");}}return <div className="login-screen"><div className="login-card"><div className="brand-mark">PS</div><h1>Pos Salon</h1><p>Inicia sesion para continuar</p><form onSubmit={submit}><Field label="Usuario"><input className="input" value={user} onChange={e=>setUser(e.target.value)} autoFocus/></Field><Field label="Contrasena"><input className="input" type="password" value={pass} onChange={e=>setPass(e.target.value)}/></Field>{error&&<p className="login-error">{error}</p>}<button className="button primary" type="submit">Iniciar sesion</button></form></div></div>}
-function Empty({title,detail}:{title:string;detail:string}){return <div className="empty"><i><Sparkles size={18}/></i><strong>{title}</strong><span>{detail}</span></div>}
+function Workspace({ user, settings, onSettings, onLogout }: { user: User; settings: BusinessSettings; onSettings: (settings: BusinessSettings) => void; onLogout: () => void }) {
+  const giro = GIROS[settings.giro];
+  const [view, setView] = useState<ViewKey>(settings.agenda ? "agenda" : "cobro");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [cash, setCash] = useState<Cash | null>(null);
+  const [reports, setReports] = useState<Reports | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [clientId, setClientId] = useState<number | null>(null);
+  const [staffId, setStaffId] = useState<number | null>(null);
+  const [appointmentId, setAppointmentId] = useState<number | null>(null);
+  const [date, setDate] = useState(today());
+  const [payment, setPayment] = useState("Tarjeta");
+  const [discount, setDiscount] = useState(0);
+  const [tip, setTip] = useState(0);
+  const [category, setCategory] = useState("Todo");
+  const [message, setMessage] = useState("Sincronizando...");
+  const [offline, setOffline] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const [selectedFolio, setSelectedFolio] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<number | null>(null);
 
-function Agenda({date,setDate,items,newAppointment,update,prepare}:{date:string;setDate:(v:string)=>void;items:Appointment[];newAppointment:()=>void;update:(id:number,s:Appointment["status"])=>void;prepare:(a:Appointment)=>void}){const value=items.filter(x=>x.status!=="cancelled").reduce((s,x)=>s+x.total,0);const occupancy=Math.min(100,items.length*14);return <><Heading eyebrow="Recepcion" title="Agenda del dia" action={<div className="actions"><input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="button primary" onClick={newAppointment}>+ Nueva cita</button></div>}/><div className="metrics"><Metric label="Citas" value={String(items.length)} detail="programadas hoy"/><Metric label="Por recibir" value={String(items.filter(x=>x.status==="confirmed").length)} detail="citas confirmadas"/><Metric label="Servicios" value={money(value)} detail="valor programado"/><Metric label="Ocupacion" value={`${occupancy}%`} detail="capacidad estimada" percent={occupancy}/></div><section className="panel"><div className="panel-head"><div><h2>Horario</h2><p>{new Date(date+"T12:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}</p></div><b>{items.length} registros</b></div>{!items.length?<Empty title="No hay citas para este dia" detail="Registra una cita o selecciona otra fecha."/>:<div className="schedule">{items.map(a=><article className={`appointment ${a.status}`} key={a.id}><time>{a.startsAt.split("T")[1]?.slice(0,5)}</time><div><h3>{a.clientName} <em className={`status ${a.status}`}>{labels[a.status]}</em></h3><strong>{a.serviceName}</strong><p>{a.staffName} · {a.durationMinutes} min · {a.clientPhone}</p>{a.notes&&<small>{a.notes}</small>}</div><aside><b>{money(a.total)}</b><div>{a.status==="confirmed"&&<button className="button small" onClick={()=>update(a.id,"in_service")}>Recibir</button>}{a.status==="in_service"&&<button className="button primary small" onClick={()=>prepare(a)}>Cobrar</button>}{a.status==="confirmed"&&<button className="icon danger" onClick={()=>update(a.id,"cancelled")} aria-label="Cancelar">×</button>}</div></aside></article>)}</div>}</section></>}
+  const load = useCallback(async () => {
+    const [p, s, t, c, r] = await Promise.all([
+      api<{ products: Product[] }>("/api/products"),
+      api<{ clients: Client[]; staff: Staff[]; appointments: Appointment[] }>("/api/salon"),
+      api<{ tickets: Ticket[] }>("/api/tickets"),
+      api<{ register: Cash }>("/api/cash"),
+      api<{ reports: Reports }>("/api/reports"),
+    ]);
+    setProducts(p.products);
+    setClients(s.clients);
+    setStaff(s.staff);
+    setAppointments(s.appointments);
+    setTickets(t.tickets);
+    setCash(c.register);
+    setReports(r.reports);
+    setOffline(false);
+  }, []);
 
-function Sale(p:{products:Product[];cats:string[];category:string;setCategory:(v:string)=>void;cart:CartItem[];add:(x:Product)=>void;justAdded:number|null;qty:(id:number,d:number)=>void;clients:Client[];staff:Staff[];clientId:number|null;staffId:number|null;setClientId:(v:number|null)=>void;setStaffId:(v:number|null)=>void;payment:string;setPayment:(v:string)=>void;discount:number;tip:number;setDiscount:(v:number)=>void;setTip:(v:number)=>void;totals:Totals;busy:boolean;charge:()=>void}){return <><Heading eyebrow="Punto de venta" title="Nuevo cobro"/><div className="sale"><div><div className="filters">{p.cats.map(x=><button className={x===p.category?"active":""} onClick={()=>p.setCategory(x)} key={x}>{x}</button>)}</div><div className="catalog">{p.products.map(x=><button onClick={()=>p.add(x)} key={x.id}><i className={x.station==="Barra"?"service":"product"}/><span><strong>{x.name}</strong><small>{x.station==="Barra"?`${x.durationMinutes} min · Servicio`:"Producto de venta"}</small></span><b>{money(x.price)}</b></button>)}</div></div><aside className="checkout"><div className="checkout-head"><div><span>VENTA ACTUAL</span><h2>{p.cart.length?`${p.cart.reduce((s,x)=>s+x.qty,0)} conceptos`:"Sin conceptos"}</h2></div><button onClick={()=>p.cart.forEach(x=>p.qty(x.id,-x.qty))}>Limpiar</button></div><div className="form-grid"><Field label="Cliente"><select className="input" value={p.clientId??""} onChange={e=>p.setClientId(e.target.value?Number(e.target.value):null)}><option value="">Mostrador</option>{p.clients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field><Field label="Especialista"><select className="input" value={p.staffId??""} onChange={e=>p.setStaffId(e.target.value?Number(e.target.value):null)}><option value="">Sin asignar</option>{p.staff.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field></div><div className="cart">{!p.cart.length?<Empty title="La venta esta vacia" detail="Selecciona un servicio o producto."/>:p.cart.map(x=><div key={x.id} className={x.id===p.justAdded?"added":""}><span><strong>{x.name}</strong><small>{money(x.price)} c/u</small></span><div className="stepper"><button onClick={()=>p.qty(x.id,-1)}>−</button><b>{x.qty}</b><button onClick={()=>p.qty(x.id,1)}>+</button></div><strong>{money(x.price*x.qty)}</strong></div>)}</div><div className="sliders"><Field label={`Descuento ${p.discount}%`}><input type="range" min="0" max="30" value={p.discount} onChange={e=>p.setDiscount(Number(e.target.value))}/></Field><Field label={`Propina ${p.tip}%`}><input type="range" min="0" max="25" value={p.tip} onChange={e=>p.setTip(Number(e.target.value))}/></Field></div><div className="totals"><span>Subtotal <b>{money(p.totals.subtotal)}</b></span><span>Descuento <b>−{money(p.totals.discountAmount)}</b></span><span>IVA incluido <b>{money(p.totals.tax)}</b></span><span>Propina <b>{money(p.totals.tipAmount)}</b></span><strong>Total <b>{money(p.totals.total)}</b></strong></div><div className="segmented">{["Efectivo","Tarjeta","Transferencia"].map(x=><button className={p.payment===x?"active":""} onClick={()=>p.setPayment(x)} key={x}>{x}</button>)}</div><button className="button charge" disabled={!p.cart.length||p.busy} onClick={p.charge}>{p.busy?"Procesando...":`Cobrar ${money(p.totals.total)}`}</button></aside></div></>}
+  useEffect(() => {
+    async function sync() {
+      try {
+        await load();
+        setMessage("Datos sincronizados");
+      } catch {
+        setOffline(true);
+        setMessage("Sin conexion con la base de datos");
+      }
+    }
+    void sync();
+  }, [load]);
 
-function Clients({clients,refresh}:{clients:Client[];refresh:()=>Promise<void>}){const [q,setQ]=useState("");const [open,setOpen]=useState(false);const [d,setD]=useState({name:"",phone:"",email:"",notes:""});async function save(){const r=await fetch("/api/salon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"client",...d})});if(r.ok){setD({name:"",phone:"",email:"",notes:""});setOpen(false);await refresh()}}return <><Heading eyebrow="Directorio" title="Clientes" action={<button className="button primary" onClick={()=>setOpen(true)}>+ Nuevo cliente</button>}/><section className="panel"><div className="panel-head"><div><h2>Directorio de clientes</h2><p>{clients.length} clientes registrados</p></div><input className="input" placeholder="Buscar nombre o telefono" value={q} onChange={e=>setQ(e.target.value)}/></div><div className="client-list">{clients.filter(x=>(x.name+x.phone).toLowerCase().includes(q.toLowerCase())).map(x=><article key={x.id}><i>{x.name.split(" ").map(n=>n[0]).slice(0,2).join("")}</i><div><h3>{x.name}</h3><p>{x.phone}{x.email?` · ${x.email}`:""}</p><small>{x.notes||"Sin notas"}</small></div><aside><span>Ultima visita</span><b>{x.lastVisit?.slice(0,10)||"Sin visitas"}</b></aside></article>)}</div></section>{open&&<div className="modal-bg" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="modal"><div className="modal-head"><div><span>DIRECTORIO</span><h2>Nuevo cliente</h2></div><button className="icon" onClick={()=>setOpen(false)}>×</button></div><div className="form-grid"><Field label="Nombre completo"><input className="input" value={d.name} onChange={e=>setD({...d,name:e.target.value})}/></Field><Field label="Telefono"><input className="input" value={d.phone} onChange={e=>setD({...d,phone:e.target.value})}/></Field></div><Field label="Correo opcional"><input className="input" value={d.email} onChange={e=>setD({...d,email:e.target.value})}/></Field><Field label="Notas"><textarea className="input" value={d.notes} onChange={e=>setD({...d,notes:e.target.value})}/></Field><div className="modal-actions"><button className="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="button primary" disabled={!d.name||!d.phone} onClick={save}>Guardar cliente</button></div></section></div>}</>}
+  const totals = useMemo<Totals>(() => {
+    const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+    const discountAmount = Math.round((subtotal * discount) / 100);
+    const base = subtotal - discountAmount;
+    const tipAmount = Math.round((base * tip) / 100);
+    return { subtotal, discountAmount, tax: Math.round((base * 16) / 116), tipAmount, total: base + tipAmount };
+  }, [cart, discount, tip]);
 
-function Catalog({products,refresh}:{products:Product[];refresh:()=>Promise<void>}){const [open,setOpen]=useState(false);const [d,setD]=useState({name:"",category:"Cabello",price:"",station:"Barra",durationMinutes:"60",commissionPercent:"35"});async function save(){const r=await fetch("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...d,price:Number(d.price),durationMinutes:Number(d.durationMinutes),commissionPercent:Number(d.commissionPercent)})});if(r.ok){setD({...d,name:"",price:""});setOpen(false);await refresh()}}async function remove(id:number){await fetch("/api/products",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});await refresh()}return <><Heading eyebrow="Catalogo" title="Servicios y productos" action={<button className="button primary" onClick={()=>setOpen(true)}>+ Nuevo concepto</button>}/><section className="panel table-wrap"><table><thead><tr><th>Concepto</th><th>Tipo</th><th>Categoria</th><th>Duracion</th><th>Precio</th><th/></tr></thead><tbody>{products.map(x=><tr key={x.id}><td><b>{x.name}</b></td><td><em>{x.station==="Barra"?"Servicio":"Producto"}</em></td><td>{x.category}</td><td>{x.durationMinutes?`${x.durationMinutes} min`:"—"}</td><td><b>{money(x.price)}</b></td><td><button className="icon danger" onClick={()=>remove(x.id)}>×</button></td></tr>)}</tbody></table></section>{open&&<div className="modal-bg" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="modal"><div className="modal-head"><div><span>CATALOGO</span><h2>Nuevo concepto</h2></div><button className="icon" onClick={()=>setOpen(false)}>×</button></div><Field label="Nombre"><input className="input" value={d.name} onChange={e=>setD({...d,name:e.target.value})}/></Field><div className="form-grid"><Field label="Tipo"><select className="input" value={d.station} onChange={e=>setD({...d,station:e.target.value})}><option value="Barra">Servicio</option><option value="Cocina">Producto</option></select></Field><Field label="Categoria"><input className="input" value={d.category} onChange={e=>setD({...d,category:e.target.value})}/></Field></div>{d.station==="Barra"?<div className="form-grid"><Field label="Precio"><input className="input" type="number" value={d.price} onChange={e=>setD({...d,price:e.target.value})}/></Field><Field label="Duracion min"><input className="input" type="number" value={d.durationMinutes} onChange={e=>setD({...d,durationMinutes:e.target.value})}/></Field></div>:<Field label="Precio"><input className="input" type="number" value={d.price} onChange={e=>setD({...d,price:e.target.value})}/></Field>}{d.station==="Barra"&&<Field label="Comision %"><input className="input" type="number" value={d.commissionPercent} onChange={e=>setD({...d,commissionPercent:e.target.value})}/></Field>}<div className="modal-actions"><button className="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="button primary" disabled={!d.name||!d.price} onClick={save}>Guardar concepto</button></div></section></div>}</>}
+  // The agenda can be switched off in settings while it is the open view.
+  const current: ViewKey = view === "agenda" && !settings.agenda ? "cobro" : view;
+  const day = appointments.filter((item) => item.startsAt.startsWith(date)).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const todayCount = appointments.filter((item) => item.startsAt.startsWith(today()) && item.status !== "cancelled").length;
+  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const categories = ["Todo", ...Array.from(new Set(products.map((product) => product.category)))];
+  const activeCategory = categories.includes(category) ? category : "Todo";
+  const visible = products.filter((product) => activeCategory === "Todo" || product.category === activeCategory);
+  const selectedTicket = tickets.find((ticket) => ticket.folio === selectedFolio) ?? tickets[0] ?? null;
 
-function People({staff,refresh}:{staff:Staff[];refresh:()=>Promise<void>}){const[open,setOpen]=useState(false);const[d,setD]=useState({name:"",specialty:"",commissionPercent:"35"});async function save(){const r=await fetch("/api/salon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"staff",...d,commissionPercent:Number(d.commissionPercent)})});if(r.ok){setD({name:"",specialty:"",commissionPercent:"35"});setOpen(false);await refresh()}}return <><Heading eyebrow="Equipo" title="Personal y comisiones" action={<button className="button primary" onClick={()=>setOpen(true)}>+ Nuevo especialista</button>}/><section className="people-grid">{staff.map(x=><article key={x.id}><i>{x.name.split(" ").map(n=>n[0]).slice(0,2).join("")}</i><div><h2>{x.name}</h2><p>{x.specialty}</p></div><aside><span>Comision base</span><b>{x.commissionPercent}%</b></aside></article>)}</section>{open&&<div className="modal-bg" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="modal"><div className="modal-head"><div><span>EQUIPO</span><h2>Nuevo especialista</h2></div><button className="icon" onClick={()=>setOpen(false)}>×</button></div><Field label="Nombre"><input className="input" value={d.name} onChange={e=>setD({...d,name:e.target.value})}/></Field><div className="form-grid"><Field label="Especialidad"><input className="input" value={d.specialty} onChange={e=>setD({...d,specialty:e.target.value})}/></Field><Field label="Comision base %"><input className="input" type="number" value={d.commissionPercent} onChange={e=>setD({...d,commissionPercent:e.target.value})}/></Field></div><div className="modal-actions"><button className="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="button primary" disabled={!d.name||!d.specialty} onClick={save}>Guardar especialista</button></div></section></div>}</>}
+  const navigation: Array<{ key: ViewKey; label: string; badge?: number }> = [
+    ...(settings.agenda ? [{ key: "agenda" as const, label: "Agenda", badge: todayCount }] : []),
+    { key: "cobro", label: "Cobro", badge: cartCount },
+    { key: "clientes", label: "Clientes" },
+    { key: "catalogo", label: giro.catalog },
+    { key: "personal", label: "Personal" },
+    { key: "caja", label: "Caja" },
+    { key: "tickets", label: "Tickets" },
+    { key: "reportes", label: "Reportes" },
+    { key: "config", label: "Configuracion" },
+  ];
 
-function Register({cash,refresh}:{cash:Cash|null;refresh:()=>Promise<void>}){const[opening,setOpening]=useState("500");const[amount,setAmount]=useState("");const[reason,setReason]=useState("");const[type,setType]=useState("out");const[closing,setClosing]=useState("");async function act(body:Record<string,unknown>){const r=await fetch("/api/cash",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(r.ok){setAmount("");await refresh()}}if(!cash)return <Empty title="Cargando caja" detail="Espera un momento."/>;return <><Heading eyebrow="Control de efectivo" title="Caja"/><div className="metrics"><Metric label="Venta del turno" value={money(cash.summary.totalSales)} detail={`${cash.summary.ticketCount} tickets`}/><Metric label="Efectivo esperado" value={money(cash.summary.expectedCash)} detail="fondo y movimientos"/><Metric label="Tarjeta" value={money(cash.summary.cardSales)} detail="cobros bancarios"/><Metric label="Transferencias" value={money(cash.summary.transferSales)} detail="pagos recibidos"/></div><div className="two-col"><section className="panel"><div className="panel-head"><div><h2>{cash.openShift?"Turno abierto":"Caja cerrada"}</h2><p>{cash.openShift?`Responsable: ${cash.openShift.cashier}`:"Abre un turno para comenzar"}</p></div></div>{cash.openShift?<><div className="cash-row"><select className="input" value={type} onChange={e=>setType(e.target.value)}><option value="out">Salida</option><option value="in">Entrada</option></select><input className="input" placeholder="Motivo" value={reason} onChange={e=>setReason(e.target.value)}/><input className="input" type="number" placeholder="Importe" value={amount} onChange={e=>setAmount(e.target.value)}/><button className="button primary" onClick={()=>act({action:"movement",type,reason,amount:Number(amount),cashier:"Recepcion"})}>Registrar</button></div><div className="movements">{cash.movements.map(x=><div key={x.id}><i className={x.type}>{x.type==="in"?"+":"−"}</i><span><b>{x.reason}</b><small>{x.createdAt}</small></span><strong>{money(x.amount)}</strong></div>)}</div></>:<div className="cash-row"><input className="input" type="number" value={opening} onChange={e=>setOpening(e.target.value)}/><button className="button primary" onClick={()=>act({action:"open",cashier:"Recepcion",openingCash:Number(opening)})}>Abrir caja</button></div>}</section>{cash.openShift&&<aside className="form-panel"><h2>Cerrar turno</h2><p>Cuenta el efectivo fisico.</p><Field label="Efectivo contado"><input className="input" type="number" value={closing} onChange={e=>setClosing(e.target.value)}/></Field><div className="reconcile"><span>Esperado</span><b>{money(cash.summary.expectedCash)}</b></div><button className="button danger-fill" disabled={!closing} onClick={()=>act({action:"close",closingCash:Number(closing)})}>Cerrar caja</button></aside>}</div></>}
+  async function refresh() {
+    try {
+      await load();
+    } catch (cause) {
+      setMessage(errorMessage(cause));
+    }
+  }
 
-function TicketList({tickets,selected,select,refresh}:{tickets:Ticket[];selected:Ticket|null;select:(t:Ticket)=>void;refresh:()=>Promise<void>}){async function cancel(){if(!selected)return;const reason=window.prompt("Motivo de cancelacion");if(!reason)return;await fetch("/api/tickets",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({folio:selected.folio,reason,cancelledBy:"Recepcion"})});await refresh()}return <><Heading eyebrow="Ventas" title="Tickets" action={<button className="button primary" onClick={()=>window.print()}>Imprimir ticket</button>}/><div className="ticket-layout"><section className="panel ticket-list">{tickets.map(x=><button className={selected?.folio===x.folio?"selected":""} key={x.folio} onClick={()=>select(x)}><span><b>{x.folio}</b><small>{x.table} · {x.createdAt}</small></span><em className={`status ${x.status==="paid"?"completed":"cancelled"}`}>{x.status==="paid"?"Pagado":"Cancelado"}</em><strong>{money(x.totals.total)}</strong></button>)}</section><aside>{selected?<><Receipt ticket={selected}/>{selected.status==="paid"&&<button className="button danger-fill full" onClick={cancel}>Cancelar ticket</button>}</>:<Empty title="Selecciona un ticket" detail="Veras el detalle listo para imprimir."/>}</aside></div></>}
+  async function updateAppointment(id: number, status: AppointmentStatus) {
+    const data = await api<{ appointments: Appointment[] }>("/api/salon", { action: "appointmentStatus", id, status });
+    setAppointments(data.appointments);
+    setMessage(`Cita ${STATUS_LABELS[status].toLowerCase()}`);
+  }
 
-function Report({data,staff}:{data:Reports|null;staff:Staff[]}){if(!data)return <Empty title="Preparando reportes" detail="Espera un momento."/>;const lists:[string,{label:string;detail:string;value:number;display:string}[]][]=[["Servicios mas vendidos",data.products.map(x=>({label:x.name,detail:`${x.qty} vendidos`,value:x.total,display:money(x.total)}))],["Formas de pago",data.payments.map(x=>({label:x.payment,detail:`${x.count} operaciones`,value:x.total,display:money(x.total)}))],["Equipo activo",staff.map(x=>({label:x.name,detail:x.specialty,value:x.commissionPercent,display:`${x.commissionPercent}%`}))]];return <><Heading eyebrow="Resultados" title="Reportes del negocio"/><div className="metrics"><Metric label="Ventas acumuladas" value={money(data.totals.totalSales)} detail={`${data.totals.ticketCount} tickets pagados`}/><Metric label="Ticket promedio" value={money(data.totals.ticketCount?data.totals.totalSales/data.totals.ticketCount:0)} detail="promedio por visita"/><Metric label="Propinas" value={money(data.totals.tips)} detail="registradas"/><Metric label="Cancelaciones" value={String(data.totals.cancelledTickets)} detail="tickets cancelados"/></div><div className="report-grid">{lists.map(([title,rows])=>{const max=Math.max(...rows.map(r=>r.value),1);return <section className="panel ranking" key={title}><div className="panel-head"><h2>{title}</h2></div>{!rows.length?<Empty title="Sin datos" detail="Aun no hay movimientos para mostrar."/>:rows.map((r,i)=><div key={r.label}><i>{i+1}</i><span><b>{r.label}</b><small>{r.detail}</small><div className="bar"><div style={{width:`${Math.round(r.value/max*100)}%`}}/></div></span><strong>{r.display}</strong></div>)}</section>})}</div></>}
+  function add(product: Product) {
+    setCart((items) => (items.some((item) => item.id === product.id) ? items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item)) : [...items, { ...product, qty: 1 }]));
+    setJustAdded(product.id);
+    setTimeout(() => setJustAdded((id) => (id === product.id ? null : id)), 450);
+  }
 
-function AppointmentForm({clients,staff,services,date,close,save}:{clients:Client[];staff:Staff[];services:Product[];date:string;close:()=>void;save:(b:Record<string,unknown>)=>Promise<void>}){const[d,setD]=useState({clientId:clients[0]?.id||0,staffId:staff[0]?.id||0,productId:services[0]?.id||0,date,time:"10:00",notes:""});const[error,setError]=useState("");async function submit(){try{await save({clientId:d.clientId,staffId:d.staffId,productId:d.productId,startsAt:`${d.date}T${d.time}`,notes:d.notes})}catch(e){setError(e instanceof Error?e.message:"No se pudo agendar")}}return <div className="modal-bg" onMouseDown={e=>e.target===e.currentTarget&&close()}><section className="modal"><div className="modal-head"><div><span>NUEVA RESERVACION</span><h2>Agendar cita</h2></div><button className="icon" onClick={close}>×</button></div><Field label="Cliente"><select className="input" value={d.clientId} onChange={e=>setD({...d,clientId:Number(e.target.value)})}>{clients.map(x=><option key={x.id} value={x.id}>{x.name} · {x.phone}</option>)}</select></Field><Field label="Servicio"><select className="input" value={d.productId} onChange={e=>setD({...d,productId:Number(e.target.value)})}>{services.map(x=><option key={x.id} value={x.id}>{x.name} · {money(x.price)}</option>)}</select></Field><Field label="Especialista"><select className="input" value={d.staffId} onChange={e=>setD({...d,staffId:Number(e.target.value)})}>{staff.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field><div className="form-grid"><Field label="Fecha"><input className="input" type="date" value={d.date} onChange={e=>setD({...d,date:e.target.value})}/></Field><Field label="Hora"><input className="input" type="time" value={d.time} onChange={e=>setD({...d,time:e.target.value})}/></Field></div><Field label="Notas"><textarea className="input" value={d.notes} onChange={e=>setD({...d,notes:e.target.value})}/></Field>{error&&<p className="error">{error}</p>}<div className="modal-actions"><button className="button" onClick={close}>Cancelar</button><button className="button primary" onClick={submit}>Confirmar cita</button></div></section></div>}
+  function prepare(appointment: Appointment) {
+    const product = products.find((item) => item.id === appointment.productId);
+    setCart(product ? [{ ...product, qty: 1 }] : []);
+    setClientId(appointment.clientId);
+    setStaffId(appointment.staffId);
+    setAppointmentId(appointment.id);
+    setView("cobro");
+    setMessage(`Cobro preparado para ${appointment.clientName}`);
+  }
 
-function Receipt({ticket}:{ticket:Ticket}){return <section className="receipt"><header><strong>POS SALON</strong><span>Belleza · Cuidado · Estilo</span><small>RFC: XAXX010101000</small></header><div>{[["Ticket",ticket.folio],["Cliente",ticket.table],["Fecha",ticket.createdAt],["Pago",ticket.payment]].map(x=><span key={x[0]}>{x[0]} <b>{x[1]}</b></span>)}</div><section>{ticket.items.map(x=><span key={x.id}>{x.qty} × {x.name}<b>{money(x.price*x.qty)}</b></span>)}</section><footer><span>Subtotal <b>{money(ticket.totals.subtotal)}</b></span><span>Descuento <b>−{money(ticket.totals.discountAmount)}</b></span><span>IVA incluido <b>{money(ticket.totals.tax)}</b></span><span>Propina <b>{money(ticket.totals.tipAmount)}</b></span><strong>Total <b>{money(ticket.totals.total)}</b></strong></footer>{ticket.status==="cancelled"&&<em>CANCELADO</em>}<p>Gracias por confiar en nosotras</p></section>}
+  async function charge() {
+    if (!cart.length) return;
+    setBusy(true);
+    try {
+      const client = clients.find((item) => item.id === clientId);
+      const data = await api<{ ticket: Ticket }>("/api/tickets", { table: client?.name ?? "Venta mostrador", payment, clientId, staffId, appointmentId, items: cart, totals });
+      setCart([]);
+      setClientId(null);
+      setStaffId(null);
+      setAppointmentId(null);
+      setDiscount(0);
+      setTip(0);
+      await load();
+      setSelectedFolio(data.ticket.folio);
+      setView("tickets");
+      setMessage(`${data.ticket.folio} cobrado: ${money(data.ticket.totals.total)}`);
+    } catch (cause) {
+      setMessage(errorMessage(cause, "No se pudo cobrar"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main>
+      <header className="topbar">
+        <div className="brand-mark">{initials(settings.businessName)}</div>
+        <div className="brand">
+          <strong>{settings.businessName}</strong>
+          <span>{settings.tagline}</span>
+        </div>
+        <div className="topbar-context">
+          <CalendarDays size={15} />
+          <span>{new Date().toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</span>
+        </div>
+        <div className={`sync ${offline ? "bad" : ""}`} aria-live="polite">
+          {offline ? <CloudOff size={15} /> : <CheckCircle2 size={15} />}
+          <span>{message}</span>
+          <div className="user-avatar">{initials(user.name).slice(0, 1)}</div>
+          <b>{user.name}</b>
+          <button className="icon logout" onClick={onLogout} aria-label="Cerrar sesion" title="Cerrar sesion"><LogOut size={16} /></button>
+        </div>
+      </header>
+      <div className="app-shell">
+        <nav className="sidebar" aria-label="Navegacion principal">
+          <div className="nav-heading">
+            <span>Espacio de trabajo</span>
+            <small>{giro.label.toUpperCase()}</small>
+          </div>
+          {navigation.map(({ key, label, badge }) => {
+            const Icon = VIEW_ICONS[key];
+            return (
+              <button className={current === key ? "active" : ""} key={key} onClick={() => setView(key)}>
+                <Icon size={17} />
+                <span>{label}</span>
+                <b>{badge || ""}</b>
+                {current === key && <ChevronRight className="nav-chevron" size={14} />}
+              </button>
+            );
+          })}
+          <div className="nav-footer">
+            <span>{user.role === "admin" ? "Administrador" : "Cajero"}</span>
+            <small>Punto de venta · v{APP_VERSION}</small>
+          </div>
+        </nav>
+        <section className="workspace">
+          <div key={current} className="view-enter">
+            {current === "agenda" && <Agenda date={date} setDate={setDate} items={day} newAppointment={() => setBooking(true)} update={updateAppointment} prepare={prepare} />}
+            {current === "cobro" && (
+              <Sale
+                giro={giro}
+                products={visible}
+                categories={categories}
+                category={activeCategory}
+                setCategory={setCategory}
+                cart={cart}
+                add={add}
+                justAdded={justAdded}
+                changeQty={(id, delta) => setCart((items) => items.map((item) => (item.id === id ? { ...item, qty: item.qty + delta } : item)).filter((item) => item.qty > 0))}
+                clear={() => {
+                  setCart([]);
+                  setAppointmentId(null);
+                }}
+                clients={clients}
+                staff={staff}
+                clientId={clientId}
+                staffId={staffId}
+                setClientId={setClientId}
+                setStaffId={setStaffId}
+                payment={payment}
+                setPayment={setPayment}
+                discount={discount}
+                tip={tip}
+                setDiscount={setDiscount}
+                setTip={setTip}
+                totals={totals}
+                busy={busy}
+                charge={charge}
+              />
+            )}
+            {current === "clientes" && <Clients clients={clients} refresh={refresh} notify={setMessage} />}
+            {current === "catalogo" && <Catalog giro={giro} products={products} refresh={refresh} notify={setMessage} />}
+            {current === "personal" && <People giro={giro} staff={staff} refresh={refresh} notify={setMessage} />}
+            {current === "caja" && <Register cash={cash} refresh={refresh} notify={setMessage} />}
+            {current === "tickets" && <TicketList settings={settings} tickets={tickets} selected={selectedTicket} select={(ticket) => setSelectedFolio(ticket.folio)} refresh={refresh} notify={setMessage} />}
+            {current === "reportes" && <Report giro={giro} data={reports} />}
+            {current === "config" && (
+              <>
+                <Heading view="config" eyebrow="Ajustes" title="Configuracion" />
+                <Settings user={user} settings={settings} onSettings={onSettings} notify={setMessage} />
+              </>
+            )}
+          </div>
+        </section>
+      </div>
+      {booking && (
+        <AppointmentForm
+          giro={giro}
+          clients={clients}
+          staff={staff}
+          services={products.some((product) => product.station === "Barra") ? products.filter((product) => product.station === "Barra") : products}
+          date={date}
+          close={() => setBooking(false)}
+          save={async (body) => {
+            const data = await api<{ appointments: Appointment[] }>("/api/salon", { action: "appointment", ...body });
+            setAppointments(data.appointments);
+            setDate(String(body.startsAt).slice(0, 10));
+            setMessage("Cita agendada correctamente");
+          }}
+        />
+      )}
+      {selectedTicket && <div className="print-only"><Receipt settings={settings} ticket={selectedTicket} /></div>}
+    </main>
+  );
+}

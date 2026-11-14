@@ -25,8 +25,12 @@ import {
   createTicketsStatusIndex,
   createTicketsTable,
   createTicketsShiftIndex,
-  initialProducts,
+  createSessionsTable,
+  createSessionsUserIndex,
+  createSettingsTable,
+  createUsersTable,
 } from "./schema";
+import { DEFAULT_SETTINGS, GIROS, isGiro, type BusinessSettings, type GiroKey } from "./giros";
 
 export type ProductRecord = {
   id: number;
@@ -175,7 +179,7 @@ type DbEnv = {
   DB?: D1Database;
 };
 
-function getDb() {
+export function getDb() {
   const db = (env as DbEnv).DB;
   if (!db) {
     throw new Error("La base de datos D1 no esta disponible.");
@@ -183,7 +187,19 @@ function getDb() {
   return db;
 }
 
-export async function ensureSchema() {
+// Creating tables is idempotent but costs ~30 statements, so do it once per
+// worker instance instead of on every request. A failed attempt is not cached.
+let schemaReady: Promise<void> | null = null;
+
+export function ensureSchema() {
+  schemaReady ??= createSchema().catch((error) => {
+    schemaReady = null;
+    throw error;
+  });
+  return schemaReady;
+}
+
+async function createSchema() {
   const db = getDb();
   await db.batch([
     db.prepare(createCashShiftsTable),
@@ -198,6 +214,9 @@ export async function ensureSchema() {
     db.prepare(createAppointmentsTable),
     db.prepare(createTicketsTable),
     db.prepare(createTicketItemsTable),
+    db.prepare(createSettingsTable),
+    db.prepare(createUsersTable),
+    db.prepare(createSessionsTable),
     db.prepare(createOpenCashShiftIndex),
     db.prepare(createCashMovementsShiftIndex),
     db.prepare(createOpenOrdersStatusIndex),
@@ -209,26 +228,13 @@ export async function ensureSchema() {
     db.prepare(createClientsPhoneIndex),
     db.prepare(createAppointmentsStartIndex),
     db.prepare(createAppointmentsStaffIndex),
+    db.prepare(createSessionsUserIndex),
   ]);
 
   await ensureProductColumns(db);
   await ensureTicketColumns(db);
   await db.prepare(createTicketsShiftIndex).run();
   await db.prepare(createTicketsStatusIndex).run();
-
-  const salonProductCount = await db.prepare("SELECT COUNT(*) AS count FROM products WHERE category IN ('Cabello', 'Color', 'Unas', 'Rostro', 'Pestanas', 'Tratamientos', 'Productos')").first<{ count: number }>();
-  if ((salonProductCount?.count ?? 0) === 0) {
-    await db.prepare("UPDATE products SET active = 0 WHERE active = 1").run();
-    await db.batch(
-      initialProducts.map((product) =>
-        db
-          .prepare("INSERT INTO products (name, category, price, station, tag, duration_minutes, commission_percent) VALUES (?, ?, ?, ?, ?, ?, ?)")
-          .bind(product.name, product.category, product.price, product.station, product.tag, product.station === "Barra" ? Number(product.tag?.split(" ")[0]) || 60 : 0, product.station === "Barra" ? 35 : 0),
-      ),
-    );
-  }
-
-  await ensureSalonSeed(db);
 }
 
 async function ensureProductColumns(db: D1Database) {
@@ -241,62 +247,82 @@ async function ensureProductColumns(db: D1Database) {
 async function ensureTicketColumns(db: D1Database) {
   const columns = await db.prepare("PRAGMA table_info(tickets)").all<{ name: string }>();
   const columnNames = new Set((columns.results ?? []).map((column) => column.name));
-  if (!columnNames.has("shift_id")) {
-    await db.prepare("ALTER TABLE tickets ADD COLUMN shift_id INTEGER").run();
-  }
-  if (!columnNames.has("status")) {
-    await db.prepare("ALTER TABLE tickets ADD COLUMN status TEXT NOT NULL DEFAULT 'paid'").run();
-  }
-  if (!columnNames.has("cancelled_at")) {
-    await db.prepare("ALTER TABLE tickets ADD COLUMN cancelled_at TEXT").run();
-  }
-  if (!columnNames.has("cancel_reason")) {
-    await db.prepare("ALTER TABLE tickets ADD COLUMN cancel_reason TEXT").run();
-  }
-  if (!columnNames.has("cancelled_by")) {
-    await db.prepare("ALTER TABLE tickets ADD COLUMN cancelled_by TEXT").run();
-  }
-  if (!columnNames.has("client_id")) await db.prepare("ALTER TABLE tickets ADD COLUMN client_id INTEGER").run();
-  if (!columnNames.has("staff_id")) await db.prepare("ALTER TABLE tickets ADD COLUMN staff_id INTEGER").run();
-  if (!columnNames.has("business_type")) await db.prepare("ALTER TABLE tickets ADD COLUMN business_type TEXT NOT NULL DEFAULT 'restaurant'").run();
+  const add = async (name: string, definition: string) => {
+    if (!columnNames.has(name)) await db.prepare(`ALTER TABLE tickets ADD COLUMN ${name} ${definition}`).run();
+  };
+  await add("shift_id", "INTEGER");
+  await add("status", "TEXT NOT NULL DEFAULT 'paid'");
+  await add("cancelled_at", "TEXT");
+  await add("cancel_reason", "TEXT");
+  await add("cancelled_by", "TEXT");
+  await add("client_id", "INTEGER");
+  await add("staff_id", "INTEGER");
+  await add("business_type", "TEXT NOT NULL DEFAULT 'restaurant'");
 }
 
-async function ensureSalonSeed(db: D1Database) {
-  const staffCount = await db.prepare("SELECT COUNT(*) AS count FROM staff").first<{ count: number }>();
-  if ((staffCount?.count ?? 0) === 0) {
-    await db.batch([
-      db.prepare("INSERT INTO staff (name, specialty, commission_percent) VALUES (?, ?, ?)").bind("Sofia Ramirez", "Color y cabello", 35),
-      db.prepare("INSERT INTO staff (name, specialty, commission_percent) VALUES (?, ?, ?)").bind("Mariana Torres", "Unas y pedicure", 30),
-      db.prepare("INSERT INTO staff (name, specialty, commission_percent) VALUES (?, ?, ?)").bind("Valeria Cruz", "Pestanas y cejas", 35),
-    ]);
-  }
+const SETTING_KEYS: Record<keyof BusinessSettings, string> = {
+  businessName: "business_name",
+  tagline: "tagline",
+  rfc: "rfc",
+  ticketFooter: "ticket_footer",
+  giro: "giro",
+  agenda: "agenda",
+};
 
-  const clientCount = await db.prepare("SELECT COUNT(*) AS count FROM clients").first<{ count: number }>();
-  if ((clientCount?.count ?? 0) === 0) {
-    await db.batch([
-      db.prepare("INSERT INTO clients (name, phone, email, notes) VALUES (?, ?, ?, ?)").bind("Daniela Morales", "55 1234 7788", "daniela@example.com", "Prefiere tonos frios"),
-      db.prepare("INSERT INTO clients (name, phone, email, notes) VALUES (?, ?, ?, ?)").bind("Fernanda Ruiz", "55 4821 9300", "fernanda@example.com", null),
-      db.prepare("INSERT INTO clients (name, phone, email, notes) VALUES (?, ?, ?, ?)").bind("Carolina Vega", "55 9632 1140", null, "Piel sensible"),
-    ]);
-  }
+export async function getSettings(): Promise<BusinessSettings> {
+  await ensureSchema();
+  const rows = await getDb().prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
+  const stored = new Map((rows.results ?? []).map((row) => [row.key, row.value]));
+  const giro = stored.get(SETTING_KEYS.giro);
+  return {
+    businessName: stored.get(SETTING_KEYS.businessName) ?? DEFAULT_SETTINGS.businessName,
+    tagline: stored.get(SETTING_KEYS.tagline) ?? DEFAULT_SETTINGS.tagline,
+    rfc: stored.get(SETTING_KEYS.rfc) ?? DEFAULT_SETTINGS.rfc,
+    ticketFooter: stored.get(SETTING_KEYS.ticketFooter) ?? DEFAULT_SETTINGS.ticketFooter,
+    giro: isGiro(giro) ? giro : DEFAULT_SETTINGS.giro,
+    agenda: stored.has(SETTING_KEYS.agenda) ? stored.get(SETTING_KEYS.agenda) === "1" : DEFAULT_SETTINGS.agenda,
+  };
+}
 
-  const appointmentCount = await db.prepare("SELECT COUNT(*) AS count FROM appointments").first<{ count: number }>();
-  if ((appointmentCount?.count ?? 0) === 0) {
-    const today = new Date().toISOString().slice(0, 10);
-    const clients = await db.prepare("SELECT id FROM clients ORDER BY id LIMIT 3").all<{ id: number }>();
-    const staff = await db.prepare("SELECT id FROM staff ORDER BY id LIMIT 3").all<{ id: number }>();
-    const services = await db.prepare("SELECT id, name, price, duration_minutes AS durationMinutes FROM products WHERE station = 'Barra' AND active = 1 ORDER BY id LIMIT 3").all<{ id: number; name: string; price: number; durationMinutes: number }>();
-    const rows = ["09:30", "11:00", "13:30"];
-    const statements = rows.flatMap((time, index) => {
-      const client = clients.results?.[index];
-      const specialist = staff.results?.[index];
-      const service = services.results?.[index];
-      return client && specialist && service
-        ? [db.prepare("INSERT INTO appointments (client_id, staff_id, product_id, service_name, starts_at, duration_minutes, total) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(client.id, specialist.id, service.id, service.name, `${today}T${time}`, service.durationMinutes || 60, service.price)]
-        : [];
-    });
-    if (statements.length > 0) await db.batch(statements);
-  }
+export async function saveSettings(input: Partial<Record<keyof BusinessSettings, unknown>>) {
+  await ensureSchema();
+  const db = getDb();
+  const current = await getSettings();
+  const text = (value: unknown, fallback: string, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : fallback);
+  const next: BusinessSettings = {
+    businessName: text(input.businessName, current.businessName, 40) || current.businessName,
+    tagline: text(input.tagline, current.tagline, 60),
+    rfc: text(input.rfc, current.rfc, 13).toUpperCase(),
+    ticketFooter: text(input.ticketFooter, current.ticketFooter, 60),
+    giro: isGiro(input.giro) ? input.giro : current.giro,
+    agenda: typeof input.agenda === "boolean" ? input.agenda : current.agenda,
+  };
+  const upsert = "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+  await db.batch([
+    db.prepare(upsert).bind(SETTING_KEYS.businessName, next.businessName),
+    db.prepare(upsert).bind(SETTING_KEYS.tagline, next.tagline),
+    db.prepare(upsert).bind(SETTING_KEYS.rfc, next.rfc),
+    db.prepare(upsert).bind(SETTING_KEYS.ticketFooter, next.ticketFooter),
+    db.prepare(upsert).bind(SETTING_KEYS.giro, next.giro),
+    db.prepare(upsert).bind(SETTING_KEYS.agenda, next.agenda ? "1" : "0"),
+  ]);
+  return next;
+}
+
+/** Loads the example catalog for a business type, but only into an empty catalog. */
+export async function seedSampleCatalog(giro: GiroKey) {
+  await ensureSchema();
+  const db = getDb();
+  const existing = await db.prepare("SELECT COUNT(*) AS count FROM products WHERE active = 1").first<{ count: number }>();
+  if ((existing?.count ?? 0) > 0) return false;
+  await db.batch(
+    GIROS[giro].products.map(([name, category, price, kind, minutes]) =>
+      db
+        .prepare("INSERT INTO products (name, category, price, station, tag, duration_minutes, commission_percent) VALUES (?, ?, ?, ?, NULL, ?, ?)")
+        .bind(name, category, price, kind === "service" ? "Barra" : "Cocina", minutes, kind === "service" ? 35 : 0),
+    ),
+  );
+  return true;
 }
 
 export async function listProducts() {
@@ -424,8 +450,15 @@ export async function createStaff(input: { name: string; specialty: string; comm
       RETURNING id, name, specialty, commission_percent AS commissionPercent`)
     .bind(name, specialty, commission)
     .first<StaffRecord>();
-  if (!member) throw new Error("No se pudo crear el especialista.");
+  if (!member) throw new Error("No se pudo guardar al integrante del equipo.");
   return member;
+}
+
+export async function deactivateStaff(id: number) {
+  await ensureSchema();
+  if (!id) throw new Error("Falta el integrante a dar de baja.");
+  await getDb().prepare("UPDATE staff SET active = 0 WHERE id = ?").bind(id).run();
+  return { id };
 }
 
 export async function listAppointments() {
@@ -473,7 +506,7 @@ export async function createAppointment(input: {
     .prepare(`SELECT id FROM appointments WHERE staff_id = ? AND starts_at = ? AND status IN ('confirmed', 'in_service') LIMIT 1`)
     .bind(input.staffId, input.startsAt)
     .first<{ id: number }>();
-  if (collision) throw new Error("El especialista ya tiene una cita a esa hora.");
+  if (collision) throw new Error("Esa persona ya tiene una cita a esa hora.");
   await db
     .prepare(`INSERT INTO appointments (client_id, staff_id, product_id, service_name, starts_at, duration_minutes, notes, total)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -582,6 +615,8 @@ export async function createTicket(input: TicketInput) {
   const nextNumber = (lastTicket?.id ?? 0) + 1029;
   const folio = `T-${String(nextNumber).padStart(4, "0")}`;
   const openShift = await db.prepare("SELECT id FROM cash_shifts WHERE status = 'open' ORDER BY id DESC LIMIT 1").first<{ id: number }>();
+  // A sale outside a shift would never show up in a cash count.
+  if (!openShift) throw new Error("Abre la caja antes de cobrar.");
 
   const created = await db
     .prepare(
@@ -679,7 +714,7 @@ export async function cancelTicket(input: { folio: string; reason: string; cance
         cancelled_by = ?
       WHERE folio = ? AND status = 'paid'`,
     )
-    .bind(reason, input.cancelledBy.trim() || "Ana Lopez", input.folio)
+    .bind(reason, input.cancelledBy.trim() || "Caja", input.folio)
     .run();
 
   return listTickets();
@@ -747,7 +782,7 @@ export async function saveOpenOrder(input: { table: string; cashier: string; ite
         status = 'open',
         updated_at = CURRENT_TIMESTAMP`,
     )
-    .bind(table, input.cashier.trim() || "Ana Lopez")
+    .bind(table, input.cashier.trim() || "Caja")
     .run();
 
   const order = await db.prepare("SELECT id FROM open_orders WHERE table_name = ?").bind(table).first<{ id: number }>();
@@ -900,6 +935,23 @@ export async function getReports() {
     )
     .all<{ name: string; qty: number; total: number }>();
 
+  const staff = await db
+    .prepare(
+      `SELECT
+        s.name,
+        s.specialty,
+        s.commission_percent AS commissionPercent,
+        COUNT(t.id) AS count,
+        COALESCE(SUM(t.subtotal - t.discount_amount), 0) AS total
+      FROM tickets t
+      JOIN staff s ON s.id = t.staff_id
+      WHERE t.status = 'paid' AND t.business_type = 'salon'
+      GROUP BY s.id
+      ORDER BY total DESC
+      LIMIT 8`,
+    )
+    .all<{ name: string; specialty: string; commissionPercent: number; count: number; total: number }>();
+
   return {
     totals: {
       ticketCount: totals?.ticketCount ?? 0,
@@ -911,6 +963,7 @@ export async function getReports() {
     },
     payments: payments.results ?? [],
     products: products.results ?? [],
+    staff: staff.results ?? [],
   };
 }
 

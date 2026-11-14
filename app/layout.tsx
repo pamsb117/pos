@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Pos Salon',
-  description: 'Agenda y punto de venta profesional para estetica y salon de belleza',
+  title: 'Punto de venta',
+  description: 'Punto de venta, agenda y caja para tu negocio',
   icons: { icon: '/favicon.svg' },
 };
 

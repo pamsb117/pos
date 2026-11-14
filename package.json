@@ -1,6 +1,6 @@
 {
   "name": "sites-project",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -8,12 +8,12 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "start": "vinext start",
+    "start": "vite preview",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "screenshot": "node scripts/capture-screenshot.mjs",
-    "pos:install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Install-MesaClaraPOS.ps1",
-    "pos:start:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Start-MesaClaraPOS.ps1",
-    "pos:backup:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Backup-MesaClaraPOS.ps1",
+    "pos:install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Install-POS.ps1",
+    "pos:start:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Start-POS.ps1",
+    "pos:backup:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Backup-POS.ps1",
     "pos:package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Build-InstallerPackage.ps1"
   },
   "dependencies": {

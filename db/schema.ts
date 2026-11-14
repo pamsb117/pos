@@ -208,16 +208,34 @@ export const createKitchenCommandItemsCommandIndex = `
 CREATE INDEX IF NOT EXISTS idx_kitchen_command_items_command_id
 ON kitchen_command_items(command_id)`;
 
-export const initialProducts = [
-  { name: "Corte y peinado", category: "Cabello", price: 350, station: "Barra", tag: "60 min" },
-  { name: "Tinte completo", category: "Color", price: 950, station: "Barra", tag: "120 min" },
-  { name: "Balayage", category: "Color", price: 1650, station: "Barra", tag: "180 min" },
-  { name: "Manicure gel", category: "Unas", price: 320, station: "Barra", tag: "60 min" },
-  { name: "Pedicure spa", category: "Unas", price: 420, station: "Barra", tag: "75 min" },
-  { name: "Diseno de ceja", category: "Rostro", price: 180, station: "Barra", tag: "30 min" },
-  { name: "Pestanas clasicas", category: "Pestanas", price: 650, station: "Barra", tag: "90 min" },
-  { name: "Tratamiento hidratante", category: "Tratamientos", price: 480, station: "Barra", tag: "45 min" },
-  { name: "Shampoo profesional", category: "Productos", price: 290, station: "Cocina", tag: "Venta" },
-  { name: "Mascarilla reparadora", category: "Productos", price: 340, station: "Cocina", tag: "Venta" },
-  { name: "Aceite capilar", category: "Productos", price: 260, station: "Cocina", tag: "Venta" },
-] as const;
+export const createSettingsTable = `
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+)`;
+
+export const createUsersTable = `
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL,
+  username_key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'cashier')) DEFAULT 'cashier',
+  password_hash TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+export const createSessionsTable = `
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)`;
+
+export const createSessionsUserIndex = `
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`;

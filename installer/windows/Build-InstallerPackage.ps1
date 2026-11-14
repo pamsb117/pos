@@ -1,5 +1,5 @@
 param(
-  [string]$OutputPath = ".\outputs\AuraEstudioPOS-Windows.zip"
+  [string]$OutputPath = ".\outputs\PuntoDeVenta-Windows.zip"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +26,11 @@ $exclude = @(
   "node_modules",
   ".installer-stage",
   "outputs",
-  "logs"
+  "logs",
+  "artifacts",
+  ".claude",
+  ".github",
+  ".env.local"
 )
 
 Get-ChildItem -Path $ProjectRoot -Force | Where-Object {

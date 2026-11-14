@@ -1,54 +1,39 @@
-import { createProduct, deactivateProduct, listProducts, updateProduct } from "@/db/pos";
+import { readBody, withUser } from "@/db/auth";
+import { createProduct, deactivateProduct, listProducts, updateProduct, type ProductInput } from "@/db/pos";
 
 export const runtime = "edge";
 
-export async function GET() {
-  try {
-    const products = await listProducts();
-    return Response.json({ products });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "No se pudieron cargar los productos." },
-      { status: 500 },
-    );
-  }
+function toProductInput(body: Record<string, unknown>): ProductInput {
+  return {
+    id: body.id == null ? undefined : Number(body.id),
+    name: typeof body.name === "string" ? body.name : "",
+    category: typeof body.category === "string" ? body.category : "",
+    price: Number(body.price),
+    station: body.station === "Cocina" ? "Cocina" : "Barra",
+    tag: typeof body.tag === "string" ? body.tag : null,
+    durationMinutes: Number(body.durationMinutes),
+    commissionPercent: Number(body.commissionPercent),
+  };
 }
 
-export async function POST(request: Request) {
-  try {
-    const product = await createProduct(await request.json());
-    return Response.json({ product }, { status: 201 });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "No se pudo crear el producto." },
-      { status: 400 },
-    );
-  }
+export function GET(request: Request) {
+  return withUser(request, async () => Response.json({ products: await listProducts() }));
 }
 
-export async function PATCH(request: Request) {
-  try {
-    const product = await updateProduct(await request.json());
-    return Response.json({ product });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "No se pudo editar el producto." },
-      { status: 400 },
-    );
-  }
+export function POST(request: Request) {
+  return withUser(request, async () =>
+    Response.json({ product: await createProduct(toProductInput(await readBody(request))) }, { status: 201 }),
+  );
 }
 
-export async function DELETE(request: Request) {
-  try {
-    const { id } = (await request.json()) as { id?: number };
-    if (!id) {
-      throw new Error("Falta el producto a desactivar.");
-    }
+export function PATCH(request: Request) {
+  return withUser(request, async () => Response.json({ product: await updateProduct(toProductInput(await readBody(request))) }));
+}
+
+export function DELETE(request: Request) {
+  return withUser(request, async () => {
+    const id = Number((await readBody(request)).id);
+    if (!id) throw new Error("Falta el concepto a eliminar.");
     return Response.json({ product: await deactivateProduct(id) });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "No se pudo desactivar el producto." },
-      { status: 400 },
-    );
-  }
+  });
 }
