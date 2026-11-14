@@ -1,5 +1,5 @@
 <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-<defs><linearGradient id="g" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7045bc"/><stop offset="1" stop-color="#d45789"/></linearGradient></defs>
-<rect x="4" y="4" width="56" height="56" rx="14" fill="url(#g)"/>
+<defs><linearGradient id="g" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8d5550"/><stop offset="1" stop-color="#b87869"/></linearGradient></defs>
+<rect x="4" y="4" width="56" height="56" rx="28" fill="url(#g)"/>
 <text x="32" y="33" text-anchor="middle" dominant-baseline="central" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="24" letter-spacing="-1" fill="#fff">PS</text>
 </svg>

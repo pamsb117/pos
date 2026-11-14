@@ -125,3 +125,4 @@ body{
 .people-grid article{grid-template-columns:46px minmax(0,1fr) auto}.people-grid article>.icon{width:36px;height:36px;font-size:17px}
 .cell-action{text-align:right;width:1%}.cash-row.open-row{grid-template-columns:minmax(0,1fr) auto}
 @media(max-width:820px){.settings-grid{grid-template-columns:1fr}}
+.bar div{background:linear-gradient(90deg,#9b5b55,#d19a83)}
