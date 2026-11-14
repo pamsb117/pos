@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $ResolvedOutputPath = if ([System.IO.Path]::IsPathRooted($OutputPath)) {
   $OutputPath
 } else {

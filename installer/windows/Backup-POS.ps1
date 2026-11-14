@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $BackupPath = Join-Path $InstallPath "backups"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $ArchivePath = Join-Path $BackupPath "punto-de-venta-respaldo-$Timestamp.zip"

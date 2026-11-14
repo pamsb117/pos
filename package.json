@@ -14,7 +14,8 @@
     "pos:install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Install-POS.ps1",
     "pos:start:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Start-POS.ps1",
     "pos:backup:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Backup-POS.ps1",
-    "pos:package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Build-InstallerPackage.ps1"
+    "pos:package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Build-InstallerPackage.ps1",
+    "pos:exe:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Build-InstallerExe.ps1"
   },
   "dependencies": {
     "lucide-react": "^1.38.0",

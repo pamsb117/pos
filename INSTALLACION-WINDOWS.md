@@ -11,18 +11,31 @@
 
 ## Instalacion en la computadora principal
 
-1. Descomprimir el paquete `PuntoDeVenta-Windows.zip` en una carpeta fija (por ejemplo `C:\PuntoDeVenta`).
-   Los datos del negocio se guardan dentro de esa carpeta, asi que no debe moverse ni borrarse.
-2. Abrir PowerShell dentro de la carpeta descomprimida.
-3. Ejecutar:
+1. Instalar Node.js LTS (22 o superior) desde https://nodejs.org.
+2. Abrir `PuntoDeVenta-Windows.exe` y aceptar.
+
+El instalador copia el programa a `%LOCALAPPDATA%\PuntoDeVenta`, descarga las
+dependencias (requiere internet esa unica vez, tarda unos minutos), compila el sistema y
+crea el acceso directo `Punto de Venta` en el escritorio. Al terminar muestra un aviso.
+
+Windows puede mostrar la advertencia "Windows protegio su PC" porque el instalador no
+esta firmado: elegir **Mas informacion > Ejecutar de todas formas**.
+
+Para actualizar una instalacion existente basta con abrir el `.exe` nuevo: reemplaza el
+programa y conserva los datos.
+
+### Instalacion manual (sin el .exe)
+
+Descomprimir `PuntoDeVenta-Windows.zip` en una carpeta fija, abrir PowerShell ahi y
+ejecutar:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Install-POS.ps1 -CreateStartupShortcut
 ```
 
-El instalador descarga las dependencias (requiere internet esa unica vez), compila el
-sistema y crea el acceso directo `Punto de Venta` en el escritorio. Con
-`-CreateStartupShortcut` tambien arranca junto con Windows.
+Con `-CreateStartupShortcut` el sistema arranca junto con Windows. Los datos del negocio
+se guardan dentro de la carpeta de instalacion (`.wrangler`), asi que no debe moverse ni
+borrarse.
 
 ## Primer arranque
 
@@ -90,18 +103,20 @@ Quitar accesos y borrar todos los datos (ventas, clientes, usuarios):
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/Uninstall-POS.ps1 -RemoveLocalData
 ```
 
-## Crear el paquete para un cliente
+## Crear el instalador para un cliente
 
 ```powershell
-npm run pos:package:windows
+npm run pos:exe:windows
 ```
 
-Genera `outputs\PuntoDeVenta-Windows.zip` sin datos locales, listo para instalar en otra
-computadora.
+Genera `outputs\PuntoDeVenta-Windows.exe`, sin datos locales. `npm run pos:package:windows`
+genera solo el `.zip` para la instalacion manual.
 
 ## Limitaciones conocidas
 
-- El instalador son scripts de PowerShell; no hay un `.exe` con asistente visual.
+- El instalador no incluye Node.js ni las dependencias: la computadora necesita Node.js
+  instalado e internet durante la instalacion.
+- El `.exe` no esta firmado digitalmente.
 - El sistema se sirve por `http` dentro de la red local. No debe exponerse a internet.
 - La impresion usa el dialogo de impresion del navegador con la impresora de tickets
   seleccionada.

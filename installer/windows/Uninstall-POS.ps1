@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $ShortcutName = "Punto de Venta.lnk"
 
 Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) $ShortcutName) -Force -ErrorAction SilentlyContinue

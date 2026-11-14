@@ -5,7 +5,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+# Any failure must reach the caller as a non-zero exit code.
+trap { Write-Host "ERROR: $($_.Exception.Message)"; exit 1 }
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $BackupPath = Join-Path $InstallPath "backups"
 $ShortcutName = "Punto de Venta.lnk"
 $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) $ShortcutName
